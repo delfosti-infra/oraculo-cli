@@ -24,4 +24,9 @@
 # Go workspace file
 go.work
 .notes
+./node_modules
+node_modules
+package-lock.json
+package.json
+e2e
 # End of https://www.toptal.com/developers/gitignore/api/go
