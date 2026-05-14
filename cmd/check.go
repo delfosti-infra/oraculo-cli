@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/delfosti/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -13,47 +14,62 @@ var checkCmd = &cobra.Command{
 	Use:   "check",
 	Short: "Valida los specs del proyecto",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ui.PrintHeader(
+			"VALIDACIÓN",
+			"Comprueba la salud del proyecto",
+			"Revisa la configuración, estructura y specs antes de publicar.",
+		)
+
 		var config Config
 
-		// 1. Verificar que oraculo.config.json existe
 		if _, err := os.Stat("oraculo.config.json"); err != nil {
-			return fmt.Errorf("corré oraculo init primero")
+			ui.PrintError("No se encontró oraculo.config.json. Ejecuta 'oraculo init' primero.")
+			return nil
 		}
+		ui.PrintStep("oraculo.config.json encontrado")
 
-		// 2. Leer y parsear el config
 		data, err := os.ReadFile("oraculo.config.json")
 		if err != nil {
-			return fmt.Errorf("no se pudo leer oraculo.config.json: %w", err)
+			ui.PrintError(fmt.Sprintf("No se pudo leer oraculo.config.json: %s", err))
+			return nil
 		}
+
 		if err := json.Unmarshal(data, &config); err != nil {
-			return fmt.Errorf("oraculo.config.json tiene formato inválido: %w", err)
+			ui.PrintError(fmt.Sprintf("oraculo.config.json tiene formato inválido: %s", err))
+			return nil
 		}
+		ui.PrintStep("Estructura JSON válida")
 
-		// 3. Validar campos obligatorios
 		if config.Project == "" || config.Slug == "" || config.BaseURL == "" {
-			return fmt.Errorf("oraculo.config.json incompleto — completá project, slug y base_url")
+			ui.PrintError("oraculo.config.json incompleto. Completa project, slug y base_url.")
+			return nil
 		}
+		ui.PrintStep("Campos obligatorios completos")
 
-		// 4. Verificar que e2e/ existe
 		if _, err := os.Stat(config.E2EDir); err != nil {
-			return fmt.Errorf("directorio %s no encontrado", config.E2EDir)
+			ui.PrintError(fmt.Sprintf("Directorio %s no encontrado.", config.E2EDir))
+			return nil
 		}
+		ui.PrintStep(fmt.Sprintf("Directorio %s/ encontrado", config.E2EDir))
 
-		// 5. Verificar playwright.config.ts (warning, no error)
 		if _, err := os.Stat("playwright.config.ts"); err != nil {
-			fmt.Println("  advertencia: no se encontró playwright.config.ts")
+			ui.PrintWarning("playwright.config.ts no encontrado en la raíz (puede estar en otro path).")
+		} else {
+			ui.PrintStep("playwright.config.ts encontrado")
 		}
 
-		// 6. Contar specs
 		specs, err := filepath.Glob(config.E2EDir + "/**/*.spec.ts")
 		if err != nil {
-			return fmt.Errorf("error al buscar specs: %w", err)
+			ui.PrintError(fmt.Sprintf("Error al buscar specs: %s", err))
+			return nil
 		}
 		if len(specs) == 0 {
-			return fmt.Errorf("no se encontraron specs en %s", config.E2EDir)
+			ui.PrintError(fmt.Sprintf("No se encontraron specs en %s/", config.E2EDir))
+			return nil
 		}
+		ui.PrintStep(fmt.Sprintf("%d spec(s) detectado(s)", len(specs)))
 
-		fmt.Printf("todo ok — %d spec(s) encontrado(s)\n", len(specs))
+		ui.PrintSuccess("Todo listo. El proyecto está saneado y se puede publicar con 'oraculo push'.")
 		return nil
 	},
 }

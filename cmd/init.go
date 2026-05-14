@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/delfosti/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -20,8 +21,15 @@ var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Inicializa Oráculo en el proyecto actual",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ui.PrintHeader(
+			"INICIO",
+			"Inicializa Oráculo en tu proyecto",
+			"Crea el archivo de configuración y la estructura base.",
+		)
+
 		if _, err := os.Stat("oraculo.config.json"); err == nil {
-			return fmt.Errorf("ya existe oraculo.config.json — proyecto ya inicializado")
+			ui.PrintError("Ya existe oraculo.config.json — el proyecto ya está inicializado.")
+			return nil
 		}
 
 		config := Config{
@@ -33,22 +41,27 @@ var initCmd = &cobra.Command{
 		}
 		data, err := json.MarshalIndent(config, "", "  ")
 		if err != nil {
-			return fmt.Errorf("error al generar config: %w", err)
+			ui.PrintError(fmt.Sprintf("No se pudo generar la configuración: %s", err))
+			return nil
 		}
 
 		if _, err := os.Stat("e2e"); os.IsNotExist(err) {
 			if err := os.Mkdir("e2e", 0755); err != nil {
-				return fmt.Errorf("no se pudo crear e2e/: %w", err)
+				ui.PrintError(fmt.Sprintf("No se pudo crear e2e/: %s", err))
+				return nil
 			}
+			ui.PrintStep("Carpeta e2e/ creada")
+		} else {
+			ui.PrintStep("Carpeta e2e/ ya existía")
 		}
 
 		if err := os.WriteFile("oraculo.config.json", data, 0644); err != nil {
-			return fmt.Errorf("no se pudo crear oraculo.config.json: %w", err)
+			ui.PrintError(fmt.Sprintf("No se pudo crear oraculo.config.json: %s", err))
+			return nil
 		}
+		ui.PrintStep("oraculo.config.json generado")
 
-		fmt.Println("Proyecto inicializado correctamente")
-		fmt.Println("  oraculo.config.json creado")
-		fmt.Println("  e2e/ listo")
+		ui.PrintSuccess("Proyecto listo. Completa los campos del config y ejecuta 'oraculo login' si todavía no lo hiciste.")
 		return nil
 	},
 }
