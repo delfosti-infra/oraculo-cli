@@ -169,6 +169,12 @@ func pushFlow(client *http.Client, config *Config, token, e2eDir, slug string) (
 	_ = writer.WriteField("specContent", string(specContent))
 	_ = writer.WriteField("specPath", specPath)
 
+	// HUs guardadas en el sidecar al hacer `oraculo record --HU=...` o vía auto-detect.
+	meta := loadFlowMeta(e2eDir, slug)
+	for _, key := range meta.JiraIssueKeys {
+		_ = writer.WriteField("jiraIssueKeys", key)
+	}
+
 	for _, sp := range screenshots {
 		file, err := os.Open(sp)
 		if err != nil {
@@ -206,7 +212,11 @@ func pushFlow(client *http.Client, config *Config, token, e2eDir, slug string) (
 		return "", fmt.Errorf("status %d: %s", resp.StatusCode, truncate(string(respBody), 200))
 	}
 
-	return fmt.Sprintf("%d screenshots subidas", len(screenshots)), nil
+	detail := fmt.Sprintf("%d screenshots subidas", len(screenshots))
+	if len(meta.JiraIssueKeys) > 0 {
+		detail = fmt.Sprintf("%s · %d HU(s) linkeadas", detail, len(meta.JiraIssueKeys))
+	}
+	return detail, nil
 }
 
 func collectScreenshots(dir string) ([]string, error) {

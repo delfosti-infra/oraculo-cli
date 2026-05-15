@@ -1,7 +1,7 @@
 {
-  "project": "devcollab",
-  "slug": "devcollab",
-  "base_url": "https://www.devcollab.es",
+  "project": "kipey-admin",
+  "slug": "kipey-admin",
+  "base_url": "https://kipey-admin-dev.azurewebsites.net",
   "api_url": "http://localhost:3000",
   "e2e_dir": "e2e"
 }
