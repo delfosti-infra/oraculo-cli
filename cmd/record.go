@@ -29,6 +29,8 @@ var actionPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`page\.waitForSelector\(['"` + "`" + `]`),
 }
 
+var recordHUFlag []string
+
 var recordCmd = &cobra.Command{
 	Use:   "record <nombre>",
 	Short: "Graba un flow con Playwright codegen y captura screenshots + trace",
@@ -46,6 +48,10 @@ var recordCmd = &cobra.Command{
 			"Graba un flow con Playwright",
 			"Abre codegen, hace los clicks y cierra el browser. Oráculo captura el trace y screenshots después.",
 		)
+
+		// Resolver HUs asociadas al flow (--HU explícito o auto-detect desde branch).
+		// Lo hacemos ANTES del codegen así no esperás 5 minutos para enterarte que la branch no tenía key.
+		huKeys := resolveHUsForRecord(recordHUFlag)
 
 		config, err := loadOraculoConfig()
 		if err != nil {
@@ -172,6 +178,12 @@ var recordCmd = &cobra.Command{
 
 		if testErr != nil {
 			ui.PrintWarning("El spec corrió con errores. Los artefactos tienen los pasos hasta donde llegó.")
+		}
+
+		if len(huKeys) > 0 {
+			if err := saveFlowMeta(e2eDir, slug, flowMeta{JiraIssueKeys: huKeys}); err != nil {
+				ui.PrintWarning(fmt.Sprintf("No se pudo guardar el meta del flow: %s", err))
+			}
 		}
 
 		ui.PrintSuccess(fmt.Sprintf("Flow `%s` listo. Subilo al backoffice con: oraculo push", slug))
@@ -324,5 +336,11 @@ func moveFile(src, dst string) error {
 }
 
 func init() {
+	recordCmd.Flags().StringSliceVar(
+		&recordHUFlag,
+		"HU",
+		nil,
+		"HU(s) de Jira asociadas a este flow (ej. --HU=KDP0-6 --HU=KDP0-7). Si no se especifica, intenta detectar desde la branch.",
+	)
 	rootCmd.AddCommand(recordCmd)
 }
