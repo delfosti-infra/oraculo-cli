@@ -13,9 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/delfosti/oraculo-cli/internal/api"
 	"github.com/delfosti/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+var pushCoreFlag bool
 
 type pushResult struct {
 	slug   string
@@ -77,6 +80,7 @@ var pushCmd = &cobra.Command{
 		ui.PrintStep(fmt.Sprintf("Publicando %d flow(s) al proyecto '%s'", len(targetSlugs), config.Slug))
 
 		client := &http.Client{Timeout: 60 * time.Second}
+		apiClient := api.NewClient(strings.TrimRight(config.APIURL, "/"))
 		var results []pushResult
 
 		for _, slug := range targetSlugs {
@@ -87,10 +91,19 @@ var pushCmd = &cobra.Command{
 			if err != nil {
 				results = append(results, pushResult{slug: slug, ok: false, detail: err.Error()})
 				ui.PrintWarning(fmt.Sprintf("'%s' · %s", slug, err.Error()))
-			} else {
-				results = append(results, pushResult{slug: slug, ok: true, detail: detail})
-				ui.PrintStep(fmt.Sprintf("'%s' · %s", slug, detail))
+				continue
 			}
+
+			if pushCoreFlag {
+				if err := apiClient.ToggleFlowCore(token, config.Slug, slug, true); err != nil {
+					ui.PrintWarning(fmt.Sprintf("'%s' subido pero falló al marcar como core: %s", slug, err.Error()))
+				} else {
+					detail = detail + " · marcado como ★ Core"
+				}
+			}
+
+			results = append(results, pushResult{slug: slug, ok: true, detail: detail})
+			ui.PrintStep(fmt.Sprintf("'%s' · %s", slug, detail))
 		}
 
 		ok, fail := 0, 0
@@ -274,5 +287,6 @@ func truncate(s string, max int) string {
 }
 
 func init() {
+	pushCmd.Flags().BoolVar(&pushCoreFlag, "core", false, "Marca el flow como parte del Core Suite del proyecto")
 	rootCmd.AddCommand(pushCmd)
 }
