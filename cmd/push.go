@@ -222,7 +222,7 @@ func pushFlow(client *http.Client, config *Config, token, e2eDir, slug string) (
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("status %d: %s", resp.StatusCode, truncate(string(respBody), 200))
+		return "", fmt.Errorf("%s", api.ErrorMessage(respBody, resp.StatusCode))
 	}
 
 	detail := fmt.Sprintf("%d screenshots subidas", len(screenshots))
@@ -277,13 +277,6 @@ func slugToName(slug string) string {
 		words[i] = strings.ToUpper(w[:1]) + w[1:]
 	}
 	return strings.Join(words, " ")
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "..."
 }
 
 func init() {

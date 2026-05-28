@@ -225,6 +225,11 @@ return token, nil
 **Trigger:** Un comando usa "✓ OK", otro usa "→ Done", otro usa "Listo!".
 **Fix:** Vocabulario común en `internal/ui/feedback.go`. Todos los comandos usan los mismos prefixes/símbolos.
 
+### G5. Imprimir el body crudo del API al usuario en un error
+**Trigger:** `fmt.Errorf("status %d: %s", code, string(respBody))` → el usuario ve el envelope JSON entero: `status 409: {"succeeded":false,"data":null,"message":"...","errors":null,"path":"..."}`.
+**Por qué duele:** El backend ya manda un `message` legible; volcar el JSON crudo es ruido y filtra detalles internos (`path`, estructura del envelope).
+**Fix:** Extraer SOLO el `message` con el helper centralizado `api.ErrorMessage(respBody, statusCode)` (parsea `types.ErrorResponse`, con fallback al body acotado si no hay message). Lo usan `Login`, `ToggleFlowCore` y `push`. No duplicar el bloque de `json.Unmarshal(... errResp)` en cada método (eso era C6).
+
 ---
 
 ## H. Comentarios

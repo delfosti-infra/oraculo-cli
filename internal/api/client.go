@@ -47,11 +47,7 @@ func (c *Client) Login(email, password string) (*types.AuthSession, error) {
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var errResp types.ErrorResponse
-		if err := json.Unmarshal(respBody, &errResp); err == nil && errResp.Message != "" {
-			return nil, fmt.Errorf("%s", errResp.Message)
-		}
-		return nil, fmt.Errorf("login falló con código %d", resp.StatusCode)
+		return nil, fmt.Errorf("%s", ErrorMessage(respBody, resp.StatusCode))
 	}
 
 	session, err := types.UnwrapJSON[types.AuthSession](respBody)
@@ -88,12 +84,20 @@ func (c *Client) ToggleFlowCore(token, projectSlug, flowSlug string, isCore bool
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var errResp types.ErrorResponse
-		if err := json.Unmarshal(respBody, &errResp); err == nil && errResp.Message != "" {
-			return fmt.Errorf("%s", errResp.Message)
-		}
-		return fmt.Errorf("toggle core falló con código %d", resp.StatusCode)
+		return fmt.Errorf("%s", ErrorMessage(respBody, resp.StatusCode))
 	}
 
 	return nil
+}
+
+func ErrorMessage(respBody []byte, statusCode int) string {
+	var env types.ErrorResponse
+	if err := json.Unmarshal(respBody, &env); err == nil && env.Message != "" {
+		return env.Message
+	}
+	body := string(respBody)
+	if len(body) > 200 {
+		body = body[:200]
+	}
+	return fmt.Sprintf("status %d: %s", statusCode, body)
 }
