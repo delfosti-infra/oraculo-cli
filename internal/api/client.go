@@ -54,12 +54,12 @@ func (c *Client) Login(email, password string) (*types.AuthSession, error) {
 		return nil, fmt.Errorf("login falló con código %d", resp.StatusCode)
 	}
 
-	var session types.AuthSession
-	if err := json.Unmarshal(respBody, &session); err != nil {
-		return nil, fmt.Errorf("no se pudo parsear la respuesta: %w", err)
+	session, err := types.UnwrapJSON[types.AuthSession](respBody)
+	if err != nil {
+		return nil, fmt.Errorf("login: %w", err)
 	}
 
-	return &session, nil
+	return session, nil
 }
 
 func (c *Client) ToggleFlowCore(token, projectSlug, flowSlug string, isCore bool) error {
