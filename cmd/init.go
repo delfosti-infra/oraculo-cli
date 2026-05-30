@@ -52,27 +52,14 @@ var initCmd = &cobra.Command{
 			ui.PrintStep("Carpeta e2e/ ya existía")
 		}
 
-		// Selector de proyecto (best-effort): requiere `oraculo login` previo.
-		// Guarda el refId del proyecto elegido; el slug ya no existe.
-		if token, err := loadToken(); err == nil {
-			apiClient := api.NewClient(strings.TrimRight(config.APIURL, "/"))
-			projects, listErr := apiClient.ListProjects(token)
-			switch {
-			case listErr != nil:
-				ui.PrintWarning(fmt.Sprintf("No se pudieron listar los proyectos: %s", listErr))
-				ui.PrintWarning("Completá `refId` y `base_url` manualmente en oraculo.config.json.")
-			case len(projects) == 0:
-				ui.PrintWarning("Tu empresa todavía no tiene proyectos. Creá uno en el backoffice y volvé a correr 'oraculo init'.")
-			default:
-				if selected := promptProjectSelection(projects); selected != nil {
-					config.Project = selected.Name
-					config.RefId = selected.RefId
-					config.BaseURL = selected.BaseURL
-					ui.PrintStep(fmt.Sprintf("Proyecto seleccionado: %s", selected.Name))
-				}
-			}
+		if selected, err := selectProject(config.APIURL); err != nil {
+			ui.PrintWarning(err.Error())
+			ui.PrintWarning("Completá `refId` y `base_url` manualmente, o corré 'oraculo login' y reintentá 'oraculo init'.")
 		} else {
-			ui.PrintWarning("No estás logueado. Corré 'oraculo login' y luego 'oraculo init' para elegir el proyecto, o completá refId/base_url manualmente.")
+			config.Project = selected.Name
+			config.RefId = selected.RefId
+			config.BaseURL = selected.BaseURL
+			ui.PrintStep(fmt.Sprintf("Proyecto seleccionado: %s", selected.Name))
 		}
 
 		data, err := json.MarshalIndent(config, "", "  ")
@@ -96,8 +83,6 @@ var initCmd = &cobra.Command{
 	},
 }
 
-// promptProjectSelection muestra los proyectos numerados y lee la elección del
-// usuario por stdin. Devuelve nil si la selección es inválida o ilegible.
 func promptProjectSelection(projects []types.Project) *types.Project {
 	ui.PrintStep("Proyectos disponibles:")
 	for i, p := range projects {
@@ -116,6 +101,27 @@ func promptProjectSelection(projects []types.Project) *types.Project {
 		return nil
 	}
 	return &projects[n-1]
+}
+
+
+func selectProject(apiURL string) (*types.Project, error) {
+	token, err := loadToken()
+	if err != nil {
+		return nil, err
+	}
+	apiClient := api.NewClient(strings.TrimRight(apiURL, "/"))
+	projects, err := apiClient.ListProjects(token)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudieron listar los proyectos: %w", err)
+	}
+	if len(projects) == 0 {
+		return nil, fmt.Errorf("tu empresa todavía no tiene proyectos — creá uno en el backoffice")
+	}
+	selected := promptProjectSelection(projects)
+	if selected == nil {
+		return nil, fmt.Errorf("selección inválida")
+	}
+	return selected, nil
 }
 
 func init() {

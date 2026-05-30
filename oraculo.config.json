@@ -1,0 +1,7 @@
+{
+  "project": "Kipey Admin",
+  "refId": "75ca5633-bf52-428f-b194-f4f2864887ef",
+  "base_url": "https://kipey-admin-dev.azurewebsites.net",
+  "api_url": "http://localhost:3000",
+  "e2e_dir": "e2e"
+}
