@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/delfosti/oraculo-cli/internal/api"
+	"github.com/delfosti/oraculo-cli/internal/api/types"
 	"github.com/delfosti/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -42,8 +43,8 @@ var pushCmd = &cobra.Command{
 			ui.PrintError(err.Error())
 			return nil
 		}
-		if config.Slug == "" {
-			ui.PrintError("Falta el campo `slug` en oraculo.config.json.")
+		if config.RefId == "" {
+			ui.PrintError("Falta el campo `refId` en oraculo.config.json. Corré 'oraculo init' para seleccionar el proyecto.")
 			return nil
 		}
 		if config.APIURL == "" {
@@ -77,7 +78,7 @@ var pushCmd = &cobra.Command{
 			}
 		}
 
-		ui.PrintStep(fmt.Sprintf("Publicando %d flow(s) al proyecto '%s'", len(targetSlugs), config.Slug))
+		ui.PrintStep(fmt.Sprintf("Publicando %d flow(s) al proyecto '%s'", len(targetSlugs), config.Project))
 
 		client := &http.Client{Timeout: 60 * time.Second}
 		apiClient := api.NewClient(strings.TrimRight(config.APIURL, "/"))
@@ -86,7 +87,7 @@ var pushCmd = &cobra.Command{
 		for _, slug := range targetSlugs {
 			spinner := ui.NewSpinner(fmt.Sprintf("Subiendo '%s'...", slug))
 			spinner.Start()
-			detail, err := pushFlow(client, config, token, e2eDir, slug)
+			flowRefId, detail, err := pushFlow(client, config, token, e2eDir, slug)
 			spinner.Stop()
 			if err != nil {
 				results = append(results, pushResult{slug: slug, ok: false, detail: err.Error()})
@@ -95,7 +96,7 @@ var pushCmd = &cobra.Command{
 			}
 
 			if pushCoreFlag {
-				if err := apiClient.ToggleFlowCore(token, config.Slug, slug, true); err != nil {
+				if err := apiClient.ToggleFlowCore(token, config.RefId, flowRefId, true); err != nil {
 					ui.PrintWarning(fmt.Sprintf("'%s' subido pero falló al marcar como core: %s", slug, err.Error()))
 				} else {
 					detail = detail + " · marcado como ★ Core"
@@ -161,17 +162,17 @@ func discoverFlows(e2eDir string) ([]string, error) {
 	return slugs, nil
 }
 
-func pushFlow(client *http.Client, config *Config, token, e2eDir, slug string) (string, error) {
+func pushFlow(client *http.Client, config *Config, token, e2eDir, slug string) (string, string, error) {
 	specPath := filepath.Join(e2eDir, slug+".spec.ts")
 	specContent, err := os.ReadFile(specPath)
 	if err != nil {
-		return "", fmt.Errorf("no se pudo leer %s: %w", specPath, err)
+		return "", "", fmt.Errorf("no se pudo leer %s: %w", specPath, err)
 	}
 
 	screenshotsDir := filepath.Join(e2eDir, ".oraculo", slug)
 	screenshots, err := collectScreenshots(screenshotsDir)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	var body bytes.Buffer
@@ -191,45 +192,50 @@ func pushFlow(client *http.Client, config *Config, token, e2eDir, slug string) (
 	for _, sp := range screenshots {
 		file, err := os.Open(sp)
 		if err != nil {
-			return "", fmt.Errorf("no se pudo abrir %s: %w", sp, err)
+			return "", "", fmt.Errorf("no se pudo abrir %s: %w", sp, err)
 		}
 		part, err := writer.CreateFormFile("screenshots", filepath.Base(sp))
 		if err != nil {
 			file.Close()
-			return "", err
+			return "", "", err
 		}
 		if _, err := io.Copy(part, file); err != nil {
 			file.Close()
-			return "", err
+			return "", "", err
 		}
 		file.Close()
 	}
 	writer.Close()
 
-	url := fmt.Sprintf("%s/projects/%s/flows", strings.TrimRight(config.APIURL, "/"), config.Slug)
+	url := fmt.Sprintf("%s/projects/%s/flows", strings.TrimRight(config.APIURL, "/"), config.RefId)
 	req, err := http.NewRequest("POST", url, &body)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("no se pudo conectar al API: %w", err)
+		return "", "", fmt.Errorf("no se pudo conectar al API: %w", err)
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("%s", api.ErrorMessage(respBody, resp.StatusCode))
+		return "", "", fmt.Errorf("%s", api.ErrorMessage(respBody, resp.StatusCode))
+	}
+
+	flow, err := types.UnwrapJSON[types.FlowRef](respBody)
+	if err != nil {
+		return "", "", fmt.Errorf("push flow: %w", err)
 	}
 
 	detail := fmt.Sprintf("%d screenshots subidas", len(screenshots))
 	if len(meta.JiraIssueKeys) > 0 {
 		detail = fmt.Sprintf("%s · %d HU(s) linkeadas", detail, len(meta.JiraIssueKeys))
 	}
-	return detail, nil
+	return flow.RefId, detail, nil
 }
 
 func collectScreenshots(dir string) ([]string, error) {

@@ -58,13 +58,43 @@ func (c *Client) Login(email, password string) (*types.AuthSession, error) {
 	return session, nil
 }
 
-func (c *Client) ToggleFlowCore(token, projectSlug, flowSlug string, isCore bool) error {
+func (c *Client) ListProjects(token string) ([]types.Project, error) {
+	url := fmt.Sprintf("%s/projects?pageNumber=0&pageSize=200", c.baseURL)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo construir el request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo conectar con el API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo leer la respuesta: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("%s", ErrorMessage(respBody, resp.StatusCode))
+	}
+
+	page, err := types.UnwrapJSON[types.PageableResponse[types.Project]](respBody)
+	if err != nil {
+		return nil, fmt.Errorf("list projects: %w", err)
+	}
+	return page.Content, nil
+}
+
+func (c *Client) ToggleFlowCore(token, projectRefId, flowRefId string, isCore bool) error {
 	body, err := json.Marshal(types.ToggleFlowCoreRequest{IsCore: isCore})
 	if err != nil {
 		return fmt.Errorf("no se pudo serializar la solicitud: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/projects/%s/flows/%s/core", c.baseURL, projectSlug, flowSlug)
+	url := fmt.Sprintf("%s/projects/%s/flows/%s/core", c.baseURL, projectRefId, flowRefId)
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewBuffer(body))
 	if err != nil {
 		return fmt.Errorf("no se pudo construir el request: %w", err)
