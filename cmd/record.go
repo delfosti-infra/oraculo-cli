@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/delfosti/oraculo-cli/internal/api"
 	"github.com/delfosti/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -30,6 +31,7 @@ var actionPatterns = []*regexp.Regexp{
 }
 
 var recordHUFlag []string
+var recordFreshFlag bool
 
 var recordCmd = &cobra.Command{
 	Use:   "record <nombre>",
@@ -81,16 +83,29 @@ var recordCmd = &cobra.Command{
 			return nil
 		}
 
+		// Cargar la sesión guardada del proyecto para grabar ya autenticado (sin
+		// grabar el login). Con --fresh se omite (ej. para grabar el flow de login).
+		authStatePath, usesAuthSession := "", false
+		if !recordFreshFlag {
+			authStatePath, usesAuthSession = loadAuthSessionForRecord(config)
+			if authStatePath != "" {
+				defer os.Remove(authStatePath)
+			}
+		}
+
 		ui.PrintStep(fmt.Sprintf("Abriendo codegen contra %s", config.BaseURL))
 
-		codegen := exec.Command(
-			"npx",
+		codegenArgs := []string{
 			"playwright",
 			"codegen",
 			config.BaseURL,
 			"--output", specPath,
 			"--target", "playwright-test",
-		)
+		}
+		if authStatePath != "" {
+			codegenArgs = append(codegenArgs, "--load-storage="+authStatePath)
+		}
+		codegen := exec.Command("npx", codegenArgs...)
 		codegen.Stdin = os.Stdin
 		codegen.Stdout = os.Stdout
 		codegen.Stderr = os.Stderr
@@ -138,12 +153,12 @@ var recordCmd = &cobra.Command{
 
 		outputDir := filepath.Join(e2eDir, ".oraculo", "runner-"+slug)
 		defer os.RemoveAll(outputDir)
-		_ = os.MkdirAll(outputDir, 0755)
+		_ = os.MkdirAll(outputDir, 0700)
 
 		absSpecPath, _ := filepath.Abs(specPath)
 		configPath := filepath.Join(outputDir, "playwright.config.ts")
-		configContent := buildPlaywrightConfig(absSpecPath)
-		if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		configContent := buildPlaywrightConfig(absSpecPath, authStatePath)
+		if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
 			spinner.Stop()
 			ui.PrintError(fmt.Sprintf("No se pudo escribir config temporal: %s", err))
 			return nil
@@ -180,8 +195,9 @@ var recordCmd = &cobra.Command{
 			ui.PrintWarning("El spec corrió con errores. Los artefactos tienen los pasos hasta donde llegó.")
 		}
 
-		if len(huKeys) > 0 {
-			if err := saveFlowMeta(e2eDir, slug, flowMeta{JiraIssueKeys: huKeys}); err != nil {
+		if len(huKeys) > 0 || usesAuthSession {
+			meta := flowMeta{JiraIssueKeys: huKeys, UsesAuthSession: usesAuthSession}
+			if err := saveFlowMeta(e2eDir, slug, meta); err != nil {
 				ui.PrintWarning(fmt.Sprintf("No se pudo guardar el meta del flow: %s", err))
 			}
 		}
@@ -232,7 +248,7 @@ func instrumentSpec(content, screenshotsDir string) string {
 
 			screenshotPath := filepath.Join(screenshotsDir, fmt.Sprintf("step-%d.png", stepCounter))
 			output = append(output, fmt.Sprintf(
-				"%sawait page.screenshot({ path: '%s', fullPage: false });",
+				"%sawait page.screenshot({ path: %q, fullPage: false });",
 				indent, screenshotPath,
 			))
 			break
@@ -299,9 +315,13 @@ func findTraceFiles(dir string) []string {
 	return found
 }
 
-func buildPlaywrightConfig(absSpecPath string) string {
+func buildPlaywrightConfig(absSpecPath, authStatePath string) string {
 	specDir := filepath.Dir(absSpecPath)
 	specName := filepath.Base(absSpecPath)
+	storageLine := ""
+	if authStatePath != "" {
+		storageLine = fmt.Sprintf("\n    storageState: %q,", authStatePath)
+	}
 	return fmt.Sprintf(`import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
@@ -314,10 +334,54 @@ export default defineConfig({
     headless: true,
     actionTimeout: 10_000,
     navigationTimeout: 20_000,
-    ignoreHTTPSErrors: true,
+    ignoreHTTPSErrors: true,%s
   },
 });
-`, specDir, specName)
+`, specDir, specName, storageLine)
+}
+
+// loadAuthSessionForRecord baja el storageState guardado del proyecto a un archivo
+// temporal para grabar y reproducir ya autenticado. Devuelve ("", false) y avisa
+// si no estás logueado, el proyecto no tiene sesión, o falla la descarga — en ese
+// caso se graba sin sesión (best-effort, no rompe el record).
+func loadAuthSessionForRecord(config *Config) (string, bool) {
+	if config.RefId == "" || config.APIURL == "" {
+		ui.PrintWarning("Sin `refId`/`api_url` en config — grabando sin sesión. Usá --fresh para silenciar.")
+		return "", false
+	}
+
+	token, err := loadToken()
+	if err != nil {
+		ui.PrintWarning("No estás logueado — grabando sin sesión. Corré `oraculo login` + `oraculo auth`, o usá --fresh.")
+		return "", false
+	}
+
+	apiClient := api.NewClient(strings.TrimRight(config.APIURL, "/"))
+	state, err := apiClient.GetAuthSessionState(token, config.RefId)
+	if err != nil {
+		ui.PrintWarning(fmt.Sprintf("No se pudo obtener la sesión (%s) — grabando sin sesión.", err))
+		return "", false
+	}
+	if state == nil {
+		ui.PrintWarning("El proyecto no tiene sesión guardada — grabando sin login. Capturala con `oraculo auth`.")
+		return "", false
+	}
+
+	tmp, err := os.CreateTemp("", "oraculo-record-auth-*.json")
+	if err != nil {
+		ui.PrintWarning("No se pudo preparar la sesión — grabando sin sesión.")
+		return "", false
+	}
+	if _, err := tmp.Write(state); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		ui.PrintWarning("No se pudo escribir la sesión — grabando sin sesión.")
+		return "", false
+	}
+	tmp.Close()
+
+	ui.PrintStep("Sesión del proyecto cargada — grabás ya autenticado (sin login)")
+	return tmp.Name(), true
 }
 
 func moveFile(src, dst string) error {
@@ -341,6 +405,12 @@ func init() {
 		"HU",
 		nil,
 		"HU(s) de Jira asociadas a este flow (ej. --HU=KDP0-6 --HU=KDP0-7). Si no se especifica, intenta detectar desde la branch.",
+	)
+	recordCmd.Flags().BoolVar(
+		&recordFreshFlag,
+		"fresh",
+		false,
+		"Graba sin la sesión guardada del proyecto (navegador limpio). Usalo para el flow de login.",
 	)
 	rootCmd.AddCommand(recordCmd)
 }

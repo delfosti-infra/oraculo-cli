@@ -188,6 +188,10 @@ func pushFlow(client *http.Client, config *Config, token, e2eDir, slug string) (
 	for _, key := range meta.JiraIssueKeys {
 		_ = writer.WriteField("jiraIssueKeys", key)
 	}
+	// El flow se grabó con la sesión del proyecto → el worker debe inyectarla al replayar.
+	if meta.UsesAuthSession {
+		_ = writer.WriteField("usesAuthSession", "true")
+	}
 
 	for _, sp := range screenshots {
 		file, err := os.Open(sp)
@@ -220,7 +224,10 @@ func pushFlow(client *http.Client, config *Config, token, e2eDir, slug string) (
 		return "", "", fmt.Errorf("no se pudo conectar al API: %w", err)
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", fmt.Errorf("no se pudo leer la respuesta: %w", err)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", "", fmt.Errorf("%s", api.ErrorMessage(respBody, resp.StatusCode))
