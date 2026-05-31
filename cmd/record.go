@@ -25,8 +25,6 @@ var actionPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`page\.click\(['"` + "`" + `]`),
 	regexp.MustCompile(`\.press\(['"` + "`" + `]`),
 	regexp.MustCompile(`getByLabel\([^)]+\)\.selectOption\(`),
-	regexp.MustCompile(`expect\(page\)\.toHaveURL\(`),
-	regexp.MustCompile(`expect\([^)]+\)\.toBeVisible\(\)`),
 	regexp.MustCompile(`page\.waitForSelector\(['"` + "`" + `]`),
 }
 
