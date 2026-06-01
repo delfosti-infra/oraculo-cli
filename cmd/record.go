@@ -124,6 +124,8 @@ var recordCmd = &cobra.Command{
 			return nil
 		}
 
+		specContent = []byte(stripStorageState(string(specContent)))
+
 		if err := os.MkdirAll(screenshotsDir, 0755); err != nil {
 			ui.PrintError(fmt.Sprintf("No se pudo crear %s: %s", screenshotsDir, err))
 			return nil
@@ -311,6 +313,12 @@ func findTraceFiles(dir string) []string {
 		return nil
 	})
 	return found
+}
+
+var storageStateUseRegex = regexp.MustCompile(`\n?[ \t]*test\.use\(\{[^{}]*storageState[^{}]*\}\);[ \t]*\n?`)
+
+func stripStorageState(spec string) string {
+	return storageStateUseRegex.ReplaceAllString(spec, "\n")
 }
 
 func buildPlaywrightConfig(absSpecPath, authStatePath string) string {
