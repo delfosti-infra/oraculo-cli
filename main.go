@@ -2,6 +2,6 @@ package main
 
 import "github.com/delfosti/oraculo-cli/cmd"
 
-func main(){
+func main() {
 	cmd.Execute()
 }

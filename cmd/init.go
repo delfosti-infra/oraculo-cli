@@ -103,7 +103,6 @@ func promptProjectSelection(projects []types.Project) *types.Project {
 	return &projects[n-1]
 }
 
-
 func selectProject(apiURL string) (*types.Project, error) {
 	token, err := loadToken()
 	if err != nil {

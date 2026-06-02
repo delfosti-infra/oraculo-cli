@@ -6,11 +6,11 @@ import (
 )
 
 type ApiResponse[T any] struct {
-	Succeeded bool    `json:"succeeded"`
-	Data      *T      `json:"data"`
-	Message   string  `json:"message"`
+	Succeeded bool     `json:"succeeded"`
+	Data      *T       `json:"data"`
+	Message   string   `json:"message"`
 	Errors    []string `json:"errors"`
-	Path      string  `json:"path"`
+	Path      string   `json:"path"`
 }
 
 func UnwrapJSON[T any](respBody []byte) (*T, error) {

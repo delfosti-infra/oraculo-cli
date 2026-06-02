@@ -74,11 +74,6 @@ func validateJiraIssueKeys(raw []string) ([]string, []string) {
 // todas las HU keys que matcheen el patrón "ABC-123" en el nombre de la branch.
 //
 // Soporta patrones comunes:
-//   feature/KDP0-6-login
-//   feat/KDP0-6
-//   feat/HU-FIX-descripcion (no matchea — "HU" y "FIX" no son tickets)
-//   bugfix/PAY-42-fix-stuff
-//   KDP0-6-something
 //
 // Si la branch no tiene ningún match o git no está disponible, devuelve nil.
 func detectHUsFromGitBranch() (branch string, keys []string) {
@@ -103,13 +98,13 @@ func detectHUsFromGitBranch() (branch string, keys []string) {
 
 var (
 	wandStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#D4B373")). 
+			Foreground(lipgloss.Color("#D4B373")).
 			Bold(true)
 	branchStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#888888")).
 			Italic(true)
 	keyStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#B89968")). 
+			Foreground(lipgloss.Color("#B89968")).
 			Bold(true)
 )
 
