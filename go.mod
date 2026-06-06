@@ -1,4 +1,4 @@
-module github.com/delfosti/oraculo-cli
+module github.com/Delfosti-Platform/oraculo-cli
 
 go 1.26.2
 

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/delfosti/oraculo-cli/internal/api/types"
+	"github.com/Delfosti-Platform/oraculo-cli/internal/api/types"
 )
 
 type Client struct {

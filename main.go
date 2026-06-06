@@ -1,6 +1,6 @@
 package main
 
-import "github.com/delfosti/oraculo-cli/cmd"
+import "github.com/Delfosti-Platform/oraculo-cli/cmd"
 
 func main() {
 	cmd.Execute()

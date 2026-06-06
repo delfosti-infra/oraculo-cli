@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/delfosti/oraculo-cli/internal/ui"
+	"github.com/Delfosti-Platform/oraculo-cli/internal/ui"
 )
 
 type flowMeta struct {

@@ -31,3 +31,11 @@ package.json
 e2e
 test-results
 # End of https://www.toptal.com/developers/gitignore/api/go
+
+# macOS
+.DS_Store
+
+# Secretos / config local (cada usuario lo genera con `oraculo init`)
+.env
+.env.*
+oraculo.config.json

@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/delfosti/oraculo-cli/internal/api"
-	"github.com/delfosti/oraculo-cli/internal/api/types"
-	"github.com/delfosti/oraculo-cli/internal/ui"
+	"github.com/Delfosti-Platform/oraculo-cli/internal/api"
+	"github.com/Delfosti-Platform/oraculo-cli/internal/api/types"
+	"github.com/Delfosti-Platform/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/delfosti/oraculo-cli/internal/ui"
+	"github.com/Delfosti-Platform/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
