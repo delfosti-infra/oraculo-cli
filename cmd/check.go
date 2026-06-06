@@ -40,8 +40,8 @@ var checkCmd = &cobra.Command{
 		}
 		ui.PrintStep("Estructura JSON válida")
 
-		if config.Project == "" || config.Slug == "" || config.BaseURL == "" {
-			ui.PrintError("oraculo.config.json incompleto. Completa project, slug y base_url.")
+		if config.Project == "" || config.RefId == "" || config.BaseURL == "" {
+			ui.PrintError("oraculo.config.json incompleto. Completa project, refId y base_url (o corré 'oraculo init').")
 			return nil
 		}
 		ui.PrintStep("Campos obligatorios completos")
