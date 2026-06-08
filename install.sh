@@ -22,14 +22,26 @@ go install "${MODULE}@${VERSION}"
 
 GOBIN="$(go env GOBIN)"
 [ -n "$GOBIN" ] || GOBIN="$(go env GOPATH)/bin"
+# Git Bash/MSYS en Windows: 'go env' devuelve rutas con backslash → normalizar.
+GOBIN="${GOBIN//\\//}"
 
-SRC="$GOBIN/oraculo-cli"
-if [ ! -x "$SRC" ]; then
-  echo "✗ No encontré el binario en $SRC tras 'go install'." >&2
+# En Windows 'go install' genera oraculo-cli.exe; soportamos ambos.
+if [ -f "$GOBIN/oraculo-cli.exe" ]; then
+  SRC="$GOBIN/oraculo-cli.exe"
+  DEST="$GOBIN/oraculo.exe"
+elif [ -f "$GOBIN/oraculo-cli" ]; then
+  SRC="$GOBIN/oraculo-cli"
+  DEST="$GOBIN/oraculo"
+else
+  echo "✗ No encontré el binario 'oraculo-cli' en $GOBIN tras 'go install'." >&2
   exit 1
 fi
 
-ln -sf "$SRC" "$GOBIN/oraculo"
+# Unix: symlink. Windows (.exe): copiamos, porque 'ln -s' no es confiable en MSYS.
+case "$DEST" in
+  *.exe) cp -f "$SRC" "$DEST" ;;
+  *)     ln -sf "$SRC" "$DEST" ;;
+esac
 echo "✓ Binario disponible como 'oraculo' en $GOBIN"
 
 # Asegurar que GOBIN esté en el PATH.
