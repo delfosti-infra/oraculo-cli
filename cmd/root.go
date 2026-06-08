@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
@@ -11,11 +12,27 @@ import (
 var rootCmd = &cobra.Command{
 	Use:          "oraculo",
 	Short:        "CLI oficial de Oráculo - DelfosTI",
+	Version:      resolveVersion(),
 	SilenceUsage: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		ui.PrintBanner()
 		_ = cmd.Help()
 	},
+}
+
+func init() {
+	rootCmd.SetVersionTemplate("oraculo {{.Version}}\n")
+}
+
+// resolveVersion devuelve la versión del módulo embebida por `go install`
+// (ej. "v1.0.4"). Para builds locales (`go build`/`go run`) devuelve "dev".
+func resolveVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if v := info.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
+	}
+	return "dev"
 }
 
 func Execute() {
