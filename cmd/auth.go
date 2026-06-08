@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/Delfosti-Platform/oraculo-cli/internal/api"
-	"github.com/Delfosti-Platform/oraculo-cli/internal/ui"
+	"github.com/delfosti-infra/oraculo-cli/internal/api"
+	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 

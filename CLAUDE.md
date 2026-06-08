@@ -10,7 +10,7 @@ Este archivo configura cómo Claude debe trabajar en este repo. **Es de lectura 
 - **CLI framework**: Cobra (`github.com/spf13/cobra`)
 - **UI/output**: lipgloss (`github.com/charmbracelet/lipgloss`)
 - **HTTP client**: stdlib `net/http` con timeout custom
-- **Módulo**: `github.com/Delfosti-Platform/oraculo-cli`
+- **Módulo**: `github.com/delfosti-infra/oraculo-cli`
 - **Layout**: `cmd/` (comandos) + `internal/api/` (cliente HTTP al core) + `internal/ui/` (output)
 
 ---
