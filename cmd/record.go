@@ -16,6 +16,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// stepFailMarker prefija, en la salida del replay, cada acción instrumentada que
+// lanzó un error. Las acciones se envuelven en try/catch para que un fallo no
+// aborte el resto del flow (así se capturan todos los screenshots, no solo los
+// previos al primer fallo); el CLI parsea estas líneas para mostrar el error real
+// de cada paso.
+const stepFailMarker = "__ORACULO_STEP_FAIL__"
+
 var actionPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`page\.goto\(`),
 	regexp.MustCompile(`getByLabel\([^)]+\)\.fill\(`),
@@ -203,8 +210,17 @@ var recordCmd = &cobra.Command{
 			}
 		}
 
-		if testErr != nil {
-			ui.PrintWarning("El spec corrió con errores. Los artefactos tienen los pasos hasta donde llegó.")
+		if failedSteps := parseFailedSteps(string(testOutput)); len(failedSteps) > 0 {
+			ui.PrintWarning(fmt.Sprintf(
+				"%d paso(s) fallaron durante el replay. Sus screenshots muestran dónde quedó:",
+				len(failedSteps),
+			))
+			for _, f := range failedSteps {
+				ui.PrintHint(f)
+			}
+		} else if testErr != nil {
+			ui.PrintWarning("El replay terminó con errores. Output de Playwright:")
+			fmt.Println(string(testOutput))
 		}
 
 		if len(huKeys) > 0 || usesAuthSession {
@@ -228,14 +244,24 @@ func instrumentSpec(content, screenshotsDir string) string {
 	submitRegex := regexp.MustCompile(`getByRole\(['"` + "`" + `]button['"` + "`" + `]`)
 
 	for _, line := range lines {
-		output = append(output, line)
+		matched := false
 
 		for _, p := range actionPatterns {
 			if !p.MatchString(line) {
 				continue
 			}
+			matched = true
 			stepCounter++
 			indent := leadingWhitespace(line)
+
+			// Envolvemos la acción en try/catch: si falla (selector ausente,
+			// timeout) registramos el error real con un marcador y seguimos, en
+			// vez de abortar el replay. Así capturamos el screenshot de cada paso
+			// (incluido el que falló), no solo los previos al primer fallo.
+			output = append(output, fmt.Sprintf(
+				"%stry { %s } catch (__oraculoErr) { console.log('%s %d: ' + (__oraculoErr instanceof Error ? __oraculoErr.message : String(__oraculoErr)).split('\\n')[0]); }",
+				indent, strings.TrimSpace(line), stepFailMarker, stepCounter,
+			))
 
 			if gotoRegex.MatchString(line) {
 				output = append(output, fmt.Sprintf(
@@ -265,6 +291,10 @@ func instrumentSpec(content, screenshotsDir string) string {
 			))
 			break
 		}
+
+		if !matched {
+			output = append(output, line)
+		}
 	}
 	return strings.Join(output, "\n")
 }
@@ -290,6 +320,26 @@ func countScreenshots(dir string) int {
 		}
 	}
 	return count
+}
+
+// parseFailedSteps extrae, de la salida del replay, los pasos que lanzaron error.
+// Cada acción instrumentada que falla imprime una línea con stepFailMarker seguido
+// del número de paso y el mensaje real de Playwright; acá las recuperamos como
+// "Paso N: <error>". Devuelve nil si no falló ningún paso.
+func parseFailedSteps(output string) []string {
+	var failed []string
+	for _, line := range strings.Split(output, "\n") {
+		idx := strings.Index(line, stepFailMarker)
+		if idx < 0 {
+			continue
+		}
+		rest := strings.TrimSpace(line[idx+len(stepFailMarker):])
+		if rest == "" {
+			continue
+		}
+		failed = append(failed, "Paso "+rest)
+	}
+	return failed
 }
 
 // playwrightMissingBrowserRegex reconoce la firma con que Playwright avisa que el
