@@ -58,10 +58,6 @@ var recordCmd = &cobra.Command{
 			"Abre codegen, hace los clicks y cierra el browser. Oráculo captura el trace y screenshots después.",
 		)
 
-		// Resolver HUs asociadas al flow (--HU explícito o auto-detect desde branch).
-		// Lo hacemos ANTES del codegen así no esperás 5 minutos para enterarte que la branch no tenía key.
-		huKeys := resolveHUsForRecord(recordHUFlag)
-
 		config, err := loadOraculoConfig()
 		if err != nil {
 			ui.PrintError(err.Error())
@@ -86,12 +82,17 @@ var recordCmd = &cobra.Command{
 		screenshotsDir := filepath.Join(e2eDir, ".oraculo", slug)
 
 		if _, err := os.Stat(specPath); err == nil {
-			ui.PrintError(fmt.Sprintf("Ya existe %s. Borralo o usa otro nombre.", specPath))
-			return nil
+			ui.PrintWarning(fmt.Sprintf("Ya existe un flow llamado `%s`.", slug))
+			if !askYesNo("¿Lo regrabas y reemplazas el actual? [s/N]", false) {
+				ui.PrintHint("Sin cambios. Graba con otro nombre, o vuelve a correr y confirma para reemplazar.")
+				return nil
+			}
+			removeFlowArtifacts(e2eDir, slug)
+			ui.PrintStep(fmt.Sprintf("Reemplazando `%s` — se borraron spec, trace, screenshots y meta anteriores.", slug))
 		}
 
-		// Cargar la sesión guardada del proyecto para grabar ya autenticado (sin
-		// grabar el login). Con --fresh se omite (ej. para grabar el flow de login).
+		huKeys := resolveHUsForRecord(recordHUFlag)
+
 		authStatePath, usesAuthSession := "", false
 		if !recordFreshFlag {
 			authStatePath, usesAuthSession = loadAuthSessionForRecord(config)
@@ -233,6 +234,13 @@ var recordCmd = &cobra.Command{
 		ui.PrintSuccess(fmt.Sprintf("Flow `%s` listo. Subilo al backoffice con: oraculo push", slug))
 		return nil
 	},
+}
+
+func removeFlowArtifacts(e2eDir, slug string) {
+	_ = os.Remove(filepath.Join(e2eDir, slug+".spec.ts"))
+	_ = os.Remove(filepath.Join(e2eDir, slug+".trace.zip"))
+	_ = os.RemoveAll(filepath.Join(e2eDir, ".oraculo", slug))
+	_ = os.Remove(metaPath(e2eDir, slug))
 }
 
 func instrumentSpec(content, screenshotsDir string) string {
