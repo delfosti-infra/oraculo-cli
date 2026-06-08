@@ -44,7 +44,7 @@ var pushCmd = &cobra.Command{
 			return nil
 		}
 		if config.RefId == "" {
-			ui.PrintError("Falta el campo `refId` en oraculo.config.json. Corré 'oraculo init' para seleccionar el proyecto.")
+			ui.PrintError("Falta el campo `refId` en oraculo.config.json. Corre 'oraculo init' para seleccionar el proyecto.")
 			return nil
 		}
 		if config.APIURL == "" {
@@ -73,7 +73,7 @@ var pushCmd = &cobra.Command{
 				return nil
 			}
 			if len(targetSlugs) == 0 {
-				ui.PrintError("No se encontraron specs en " + e2eDir + "/. Corré 'oraculo record <nombre>' primero.")
+				ui.PrintError("No se encontraron specs en " + e2eDir + "/. Corre 'oraculo record <nombre>' primero.")
 				return nil
 			}
 		}
@@ -133,11 +133,11 @@ func loadToken() (string, error) {
 	tokenPath := filepath.Join(home, ".oraculo", "token")
 	data, err := os.ReadFile(tokenPath)
 	if err != nil {
-		return "", fmt.Errorf("no se encontró token en ~/.oraculo/token. Corré 'oraculo login' primero")
+		return "", fmt.Errorf("no se encontró token en ~/.oraculo/token. Corre 'oraculo login' primero")
 	}
 	token := strings.TrimSpace(string(data))
 	if token == "" {
-		return "", fmt.Errorf("token vacío. Corré 'oraculo login' de nuevo")
+		return "", fmt.Errorf("token vacío. Corre 'oraculo login' de nuevo")
 	}
 	return token, nil
 }

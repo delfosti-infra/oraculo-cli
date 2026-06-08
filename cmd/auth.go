@@ -61,7 +61,7 @@ func runAuthCapture() error {
 		return nil
 	}
 	if config.RefId == "" {
-		ui.PrintError("Falta el campo `refId` en oraculo.config.json. Corré 'oraculo init'.")
+		ui.PrintError("Falta el campo `refId` en oraculo.config.json. Corre 'oraculo init'.")
 		return nil
 	}
 	if config.APIURL == "" {
@@ -125,7 +125,7 @@ func runAuthCapture() error {
 		expiry = "expira " + *meta.ExpiresAt
 	}
 	ui.PrintSuccess(fmt.Sprintf(
-		"Sesión '%s' guardada para '%s' (%s). Grabá con `oraculo record <nombre>` sin el login.",
+		"Sesión '%s' guardada para '%s' (%s). Graba con `oraculo record <nombre>` sin el login.",
 		meta.Label, config.Project, expiry,
 	))
 	return nil
@@ -138,7 +138,7 @@ func runAuthStatus() error {
 		return nil
 	}
 	if config.RefId == "" || config.APIURL == "" {
-		ui.PrintError("Faltan `refId` o `api_url` en oraculo.config.json. Corré 'oraculo init'.")
+		ui.PrintError("Faltan `refId` o `api_url` en oraculo.config.json. Corre 'oraculo init'.")
 		return nil
 	}
 
@@ -156,7 +156,7 @@ func runAuthStatus() error {
 	}
 	if meta == nil {
 		ui.PrintStep(fmt.Sprintf(
-			"El proyecto '%s' no tiene sesión guardada. Capturala con `oraculo auth`.",
+			"El proyecto '%s' no tiene sesión guardada. Captúrala con `oraculo auth`.",
 			config.Project,
 		))
 		return nil
@@ -187,7 +187,7 @@ func runAuthClear() error {
 		return nil
 	}
 	if config.RefId == "" || config.APIURL == "" {
-		ui.PrintError("Faltan `refId` o `api_url` en oraculo.config.json. Corré 'oraculo init'.")
+		ui.PrintError("Faltan `refId` o `api_url` en oraculo.config.json. Corre 'oraculo init'.")
 		return nil
 	}
 

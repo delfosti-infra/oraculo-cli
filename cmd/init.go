@@ -54,7 +54,7 @@ var initCmd = &cobra.Command{
 
 		if selected, err := selectProject(config.APIURL); err != nil {
 			ui.PrintWarning(err.Error())
-			ui.PrintWarning("Completá `refId` y `base_url` manualmente, o corré 'oraculo login' y reintentá 'oraculo init'.")
+			ui.PrintWarning("Completa `refId` y `base_url` manualmente, o corre 'oraculo login' y reintenta 'oraculo init'.")
 		} else {
 			config.Project = selected.Name
 			config.RefId = selected.RefId
@@ -75,9 +75,9 @@ var initCmd = &cobra.Command{
 		ui.PrintStep("oraculo.config.json generado")
 
 		if config.RefId != "" {
-			ui.PrintSuccess("Proyecto listo. Grabá un flow con 'oraculo record <nombre>' y publicá con 'oraculo push'.")
+			ui.PrintSuccess("Proyecto listo. Graba un flow con 'oraculo record <nombre>' y publica con 'oraculo push'.")
 		} else {
-			ui.PrintSuccess("Config generada. Completá los campos faltantes y usá 'oraculo push'.")
+			ui.PrintSuccess("Config generada. Completa los campos faltantes y usa 'oraculo push'.")
 		}
 		return nil
 	},
@@ -88,7 +88,7 @@ func promptProjectSelection(projects []types.Project) *types.Project {
 	for i, p := range projects {
 		fmt.Printf("    %d) %s  ·  %s\n", i+1, p.Name, p.BaseURL)
 	}
-	fmt.Printf("  Elegí un proyecto [1-%d]: ", len(projects))
+	fmt.Printf("  Elige un proyecto [1-%d]: ", len(projects))
 
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
@@ -97,7 +97,7 @@ func promptProjectSelection(projects []types.Project) *types.Project {
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(line))
 	if err != nil || n < 1 || n > len(projects) {
-		ui.PrintWarning("Selección inválida — completá refId manualmente.")
+		ui.PrintWarning("Selección inválida — completa refId manualmente.")
 		return nil
 	}
 	return &projects[n-1]
@@ -114,7 +114,7 @@ func selectProject(apiURL string) (*types.Project, error) {
 		return nil, fmt.Errorf("no se pudieron listar los proyectos: %w", err)
 	}
 	if len(projects) == 0 {
-		return nil, fmt.Errorf("tu empresa todavía no tiene proyectos — creá uno en el backoffice")
+		return nil, fmt.Errorf("tu empresa todavía no tiene proyectos — crea uno en el backoffice")
 	}
 	selected := promptProjectSelection(projects)
 	if selected == nil {

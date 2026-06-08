@@ -104,7 +104,6 @@ var recordCmd = &cobra.Command{
 		ui.PrintStep(fmt.Sprintf("Abriendo codegen contra %s", config.BaseURL))
 
 		codegenArgs := []string{
-			"playwright",
 			"codegen",
 			config.BaseURL,
 			"--output", specPath,
@@ -114,7 +113,7 @@ var recordCmd = &cobra.Command{
 			codegenArgs = append(codegenArgs, "--load-storage="+authStatePath)
 		}
 		var codegenStderr bytes.Buffer
-		codegen := exec.Command("npx", codegenArgs...)
+		codegen := exec.Command("npx", playwrightNpxArgs(codegenArgs...)...)
 		codegen.Stdin = os.Stdin
 		codegen.Stdout = os.Stdout
 		codegen.Stderr = io.MultiWriter(os.Stderr, &codegenStderr)
@@ -181,12 +180,13 @@ var recordCmd = &cobra.Command{
 
 		runTest := exec.Command(
 			"npx",
-			"playwright",
-			"test",
-			"--config", configPath,
-			"--trace=on",
-			"--reporter=line",
-			"--workers=1",
+			playwrightNpxArgs(
+				"test",
+				"--config", configPath,
+				"--trace=on",
+				"--reporter=line",
+				"--workers=1",
+			)...,
 		)
 		testOutput, testErr := runTest.CombinedOutput()
 		spinner.Stop()
@@ -231,7 +231,7 @@ var recordCmd = &cobra.Command{
 			}
 		}
 
-		ui.PrintSuccess(fmt.Sprintf("Flow `%s` listo. Subilo al backoffice con: oraculo push", slug))
+		ui.PrintSuccess(fmt.Sprintf("Flow `%s` listo. Súbelo al backoffice con: oraculo push", slug))
 		return nil
 	},
 }
@@ -370,10 +370,15 @@ func printPlaywrightInstallHint() {
 	ui.PrintHint("Después vuelve a correr:  oraculo record")
 }
 
+
+func playwrightNpxArgs(sub ...string) []string {
+	return append([]string{"--yes", "--package", "@playwright/test", "playwright"}, sub...)
+}
+
 func loadOraculoConfig() (*Config, error) {
 	data, err := os.ReadFile("oraculo.config.json")
 	if err != nil {
-		return nil, fmt.Errorf("no se encontró oraculo.config.json. Corré 'oraculo init' primero")
+		return nil, fmt.Errorf("no se encontró oraculo.config.json. Corre 'oraculo init' primero")
 	}
 	var c Config
 	if err := json.Unmarshal(data, &c); err != nil {
@@ -442,13 +447,13 @@ export default defineConfig({
 // caso se graba sin sesión (best-effort, no rompe el record).
 func loadAuthSessionForRecord(config *Config) (string, bool) {
 	if config.RefId == "" || config.APIURL == "" {
-		ui.PrintWarning("Sin `refId`/`api_url` en config — grabando sin sesión. Usá --fresh para silenciar.")
+		ui.PrintWarning("Sin `refId`/`api_url` en config — grabando sin sesión. Usa --fresh para silenciar.")
 		return "", false
 	}
 
 	token, err := loadToken()
 	if err != nil {
-		ui.PrintWarning("No estás logueado — grabando sin sesión. Corré `oraculo login` + `oraculo auth`, o usá --fresh.")
+		ui.PrintWarning("No estás logueado — grabando sin sesión. Corre `oraculo login` + `oraculo auth`, o usa --fresh.")
 		return "", false
 	}
 
@@ -459,7 +464,7 @@ func loadAuthSessionForRecord(config *Config) (string, bool) {
 		return "", false
 	}
 	if state == nil {
-		ui.PrintWarning("El proyecto no tiene sesión guardada — grabando sin login. Capturala con `oraculo auth`.")
+		ui.PrintWarning("El proyecto no tiene sesión guardada — grabando sin login. Captúrala con `oraculo auth`.")
 		return "", false
 	}
 
@@ -476,7 +481,7 @@ func loadAuthSessionForRecord(config *Config) (string, bool) {
 	}
 	tmp.Close()
 
-	ui.PrintStep("Sesión del proyecto cargada — grabás ya autenticado (sin login)")
+	ui.PrintStep("Sesión del proyecto cargada — grabas ya autenticado (sin login)")
 	return tmp.Name(), true
 }
 
@@ -506,7 +511,7 @@ func init() {
 		&recordFreshFlag,
 		"fresh",
 		false,
-		"Graba sin la sesión guardada del proyecto (navegador limpio). Usalo para el flow de login.",
+		"Graba sin la sesión guardada del proyecto (navegador limpio). Úsalo para el flow de login.",
 	)
 	rootCmd.AddCommand(recordCmd)
 }
