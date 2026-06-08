@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -103,11 +105,16 @@ var recordCmd = &cobra.Command{
 		if authStatePath != "" {
 			codegenArgs = append(codegenArgs, "--load-storage="+authStatePath)
 		}
+		var codegenStderr bytes.Buffer
 		codegen := exec.Command("npx", codegenArgs...)
 		codegen.Stdin = os.Stdin
 		codegen.Stdout = os.Stdout
-		codegen.Stderr = os.Stderr
+		codegen.Stderr = io.MultiWriter(os.Stderr, &codegenStderr)
 		if err := codegen.Run(); err != nil {
+			if playwrightBrowsersMissing(codegenStderr.String()) {
+				printPlaywrightInstallHint()
+				return nil
+			}
 			ui.PrintError(fmt.Sprintf("Codegen no terminó bien: %s", err))
 			return nil
 		}
@@ -175,6 +182,11 @@ var recordCmd = &cobra.Command{
 		)
 		testOutput, testErr := runTest.CombinedOutput()
 		spinner.Stop()
+
+		if testErr != nil && playwrightBrowsersMissing(string(testOutput)) {
+			printPlaywrightInstallHint()
+			return nil
+		}
 
 		screenshots := countScreenshots(screenshotsDir)
 		if screenshots == 0 {
@@ -278,6 +290,26 @@ func countScreenshots(dir string) int {
 		}
 	}
 	return count
+}
+
+// playwrightMissingBrowserRegex reconoce la firma con que Playwright avisa que el
+// navegador no está descargado. La ruta y la versión cambian; estos textos no.
+var playwrightMissingBrowserRegex = regexp.MustCompile(
+	`(?i)Executable doesn't exist|playwright install`,
+)
+
+// playwrightBrowsersMissing distingue, en la salida de Playwright, el caso de
+// navegadores sin instalar de un fallo genérico del codegen o del run.
+func playwrightBrowsersMissing(output string) bool {
+	return playwrightMissingBrowserRegex.MatchString(output)
+}
+
+// printPlaywrightInstallHint guía a instalar los navegadores de Playwright en vez
+// de dejar al usuario con un "exit status 1" sin contexto.
+func printPlaywrightInstallHint() {
+	ui.PrintError("Los navegadores de Playwright no están instalados.")
+	ui.PrintHint("Instálalos con:  npx playwright install chromium")
+	ui.PrintHint("Después vuelve a correr:  oraculo record")
 }
 
 func loadOraculoConfig() (*Config, error) {

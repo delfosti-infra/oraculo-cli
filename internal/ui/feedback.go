@@ -66,6 +66,10 @@ func PrintStep(message string) {
 	fmt.Printf("  %s %s\n", successStyle.Render("✓"), labelStyle.Render(message))
 }
 
+func PrintHint(message string) {
+	fmt.Printf("  %s %s\n", arrowStyle.Render("→"), hintStyle.Render(message))
+}
+
 func PrintWarning(message string) {
 	warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#C2902B")).Bold(true)
 	fmt.Printf("  %s %s\n", warningStyle.Render("!"), labelStyle.Render(message))
