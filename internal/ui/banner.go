@@ -10,7 +10,7 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
-const version = "v0.1.0"
+const version = "v1.1.0"
 
 const asciiLogo = ` ██████╗ ██████╗  █████╗  ██████╗██╗   ██╗██╗      ██████╗
 ██╔═══██╗██╔══██╗██╔══██╗██╔════╝██║   ██║██║     ██╔═══██╗

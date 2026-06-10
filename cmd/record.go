@@ -16,26 +16,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// stepFailMarker prefija, en la salida del replay, cada acción instrumentada que
-// lanzó un error. Las acciones se envuelven en try/catch para que un fallo no
-// aborte el resto del flow (así se capturan todos los screenshots, no solo los
-// previos al primer fallo); el CLI parsea estas líneas para mostrar el error real
-// de cada paso.
+// stepFailMarker prefija cada acción instrumentada que falló en el replay.
 const stepFailMarker = "__ORACULO_STEP_FAIL__"
-
-var actionPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`page\.goto\(`),
-	regexp.MustCompile(`getByLabel\([^)]+\)\.fill\(`),
-	regexp.MustCompile(`getByRole\(['"` + "`" + `]\w+['"` + "`" + `],\s*\{[^}]+\}\)\.fill\(`),
-	regexp.MustCompile(`getByPlaceholder\(['"` + "`" + `][^'"` + "`" + `]+['"` + "`" + `]\)\.fill\(`),
-	regexp.MustCompile(`page\.fill\(['"` + "`" + `]`),
-	regexp.MustCompile(`getByRole\(['"` + "`" + `]\w+['"` + "`" + `],\s*\{[^}]+\}\)\.click\(\)`),
-	regexp.MustCompile(`getByText\(['"` + "`" + `][^'"` + "`" + `]+['"` + "`" + `]\)\.click\(\)`),
-	regexp.MustCompile(`page\.click\(['"` + "`" + `]`),
-	regexp.MustCompile(`\.press\(['"` + "`" + `]`),
-	regexp.MustCompile(`getByLabel\([^)]+\)\.selectOption\(`),
-	regexp.MustCompile(`page\.waitForSelector\(['"` + "`" + `]`),
-}
 
 var recordHUFlag []string
 var recordFreshFlag bool
@@ -112,17 +94,32 @@ var recordCmd = &cobra.Command{
 		if authStatePath != "" {
 			codegenArgs = append(codegenArgs, "--load-storage="+authStatePath)
 		}
-		var codegenStderr bytes.Buffer
-		codegen := exec.Command("npx", playwrightNpxArgs(codegenArgs...)...)
-		codegen.Stdin = os.Stdin
-		codegen.Stdout = os.Stdout
-		codegen.Stderr = io.MultiWriter(os.Stderr, &codegenStderr)
-		if err := codegen.Run(); err != nil {
-			if playwrightBrowsersMissing(codegenStderr.String()) {
+		runCodegen := func() (string, error) {
+			var stderr bytes.Buffer
+			codegen := exec.Command("npx", playwrightNpxArgs(codegenArgs...)...)
+			codegen.Stdin = os.Stdin
+			codegen.Stdout = os.Stdout
+			codegen.Stderr = io.MultiWriter(os.Stderr, &stderr)
+			err := codegen.Run()
+			return stderr.String(), err
+		}
+
+		codegenStderr, codegenErr := runCodegen()
+		if codegenErr != nil && playwrightBrowsersMissing(codegenStderr) {
+			// Falta chromium (máquina nueva): lo instalamos y reintentamos.
+			ui.PrintStep("Faltan los navegadores de Playwright — descargando chromium (una sola vez)…")
+			if installErr := installPlaywrightBrowsers(); installErr != nil {
 				printPlaywrightInstallHint()
 				return nil
 			}
-			ui.PrintError(fmt.Sprintf("Codegen no terminó bien: %s", err))
+			codegenStderr, codegenErr = runCodegen()
+		}
+		if codegenErr != nil {
+			if playwrightBrowsersMissing(codegenStderr) {
+				printPlaywrightInstallHint()
+				return nil
+			}
+			ui.PrintError(fmt.Sprintf("Codegen no terminó bien: %s", codegenErr))
 			return nil
 		}
 
@@ -138,7 +135,7 @@ var recordCmd = &cobra.Command{
 			return nil
 		}
 
-		specContent = []byte(stripStorageState(string(specContent)))
+		specContent = []byte(cleanRecordedSpec(stripStorageState(string(specContent))))
 
 		if err := os.MkdirAll(screenshotsDir, 0755); err != nil {
 			ui.PrintError(fmt.Sprintf("No se pudo crear %s: %s", screenshotsDir, err))
@@ -252,59 +249,81 @@ func instrumentSpec(content, screenshotsDir string) string {
 	submitRegex := regexp.MustCompile(`getByRole\(['"` + "`" + `]button['"` + "`" + `]`)
 
 	for _, line := range lines {
-		matched := false
-
-		for _, p := range actionPatterns {
-			if !p.MatchString(line) {
-				continue
-			}
-			matched = true
-			stepCounter++
-			indent := leadingWhitespace(line)
-
-			// Envolvemos la acción en try/catch: si falla (selector ausente,
-			// timeout) registramos el error real con un marcador y seguimos, en
-			// vez de abortar el replay. Así capturamos el screenshot de cada paso
-			// (incluido el que falló), no solo los previos al primer fallo.
-			output = append(output, fmt.Sprintf(
-				"%stry { %s } catch (__oraculoErr) { console.log('%s %d: ' + (__oraculoErr instanceof Error ? __oraculoErr.message : String(__oraculoErr)).split('\\n')[0]); }",
-				indent, strings.TrimSpace(line), stepFailMarker, stepCounter,
-			))
-
-			if gotoRegex.MatchString(line) {
-				output = append(output, fmt.Sprintf(
-					"%sawait page.waitForLoadState('domcontentloaded').catch(() => {});",
-					indent,
-				))
-				output = append(output, fmt.Sprintf(
-					"%sawait page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});",
-					indent,
-				))
-			} else if submitRegex.MatchString(line) {
-				output = append(output, fmt.Sprintf(
-					"%sawait page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});",
-					indent,
-				))
-			}
-
-			output = append(output, fmt.Sprintf(
-				"%sawait page.waitForTimeout(400);",
-				indent,
-			))
-
-			screenshotPath := filepath.Join(screenshotsDir, fmt.Sprintf("step-%d.png", stepCounter))
-			output = append(output, fmt.Sprintf(
-				"%sawait page.screenshot({ path: %q, fullPage: false });",
-				indent, screenshotPath,
-			))
-			break
-		}
-
-		if !matched {
+		trimmed := strings.TrimSpace(line)
+		if !isWrappableAction(trimmed) {
 			output = append(output, line)
+			continue
 		}
+
+		stepCounter++
+		indent := leadingWhitespace(line)
+
+		failLog := func(errVar string) string {
+			return fmt.Sprintf(
+				"console.log('%s %d: ' + (%s instanceof Error ? %s.message : String(%s)).split('\\n')[0]);",
+				stepFailMarker, stepCounter, errVar, errVar, errVar,
+			)
+		}
+
+		// try/catch multilínea: si la acción falla, registra el error y sigue, para
+		// capturar el screenshot de cada paso. Si el fallo es strict-mode violation
+		// (codegen grabó un selector que en el replay matchea varios), reintenta acotado
+		// a .first() —la misma desambiguación que codegen usa— antes de darlo por fallido.
+		output = append(output, indent+"try {", indent+"  "+trimmed)
+		if retry := retryFirstExpr(trimmed); retry != "" {
+			output = append(output,
+				indent+"} catch (__oraculoErr) {",
+				indent+"  if (/strict mode violation/i.test(String(__oraculoErr))) {",
+				indent+"    try { "+retry+" } catch (__oraculoErr2) { "+failLog("__oraculoErr2")+" }",
+				indent+"  } else { "+failLog("__oraculoErr")+" }",
+				indent+"}",
+			)
+		} else {
+			output = append(output, fmt.Sprintf("%s} catch (__oraculoErr) { %s }", indent, failLog("__oraculoErr")))
+		}
+
+		if gotoRegex.MatchString(line) {
+			output = append(output,
+				indent+"await page.waitForLoadState('domcontentloaded').catch(() => {});",
+				indent+"await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});",
+			)
+		} else if submitRegex.MatchString(line) {
+			output = append(output,
+				indent+"await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});",
+			)
+		}
+
+		output = append(output, indent+"await page.waitForTimeout(400);")
+
+		screenshotPath := filepath.Join(screenshotsDir, fmt.Sprintf("step-%d.png", stepCounter))
+		output = append(output, fmt.Sprintf(
+			"%sawait page.screenshot({ path: %q, fullPage: false });",
+			indent, screenshotPath,
+		))
 	}
 	return strings.Join(output, "\n")
+}
+
+// isWrappableAction envuelve TODA acción `await …;` (no solo click/fill: también
+// dblclick, locator().click(), .nth(), .filter()). El prefijo `await ` excluye las
+// declaraciones `const x = await …` (p.ej. el patrón de download), que van a nivel de función.
+func isWrappableAction(trimmed string) bool {
+	return strings.HasSuffix(trimmed, ";") && strings.HasPrefix(trimmed, "await ")
+}
+
+// retryFirstExpr arma la misma acción acotada a .first(), para reintentarla cuando el
+// selector grabado matchea varios elementos (strict-mode). Devuelve "" si la acción no es
+// un click/fill/etc. de una sola línea o si ya está desambiguada (.first/.last/.nth).
+func retryFirstExpr(trimmed string) string {
+	m := recordedActionRegex.FindStringSubmatch(trimmed)
+	if m == nil {
+		return ""
+	}
+	locator, method, args := m[2], m[3], m[4]
+	if strings.Contains(locator, ".first(") || strings.Contains(locator, ".last(") || strings.Contains(locator, ".nth(") {
+		return ""
+	}
+	return fmt.Sprintf("%s.first().%s(%s);", locator, method, args)
 }
 
 func leadingWhitespace(s string) string {
@@ -330,15 +349,16 @@ func countScreenshots(dir string) int {
 	return count
 }
 
-// parseFailedSteps extrae, de la salida del replay, los pasos que lanzaron error.
-// Cada acción instrumentada que falla imprime una línea con stepFailMarker seguido
-// del número de paso y el mensaje real de Playwright; acá las recuperamos como
-// "Paso N: <error>". Devuelve nil si no falló ningún paso.
+// parseFailedSteps recupera como "Paso N: <error>" los pasos que fallaron en el replay.
 func parseFailedSteps(output string) []string {
 	var failed []string
 	for _, line := range strings.Split(output, "\n") {
 		idx := strings.Index(line, stepFailMarker)
 		if idx < 0 {
+			continue
+		}
+		// Descarta el eco del código fuente (stack/snippet), no la salida del console.log.
+		if strings.Contains(line, "console.log(") || strings.Contains(line, "__oraculoErr") {
 			continue
 		}
 		rest := strings.TrimSpace(line[idx+len(stepFailMarker):])
@@ -350,26 +370,28 @@ func parseFailedSteps(output string) []string {
 	return failed
 }
 
-// playwrightMissingBrowserRegex reconoce la firma con que Playwright avisa que el
-// navegador no está descargado. La ruta y la versión cambian; estos textos no.
+// playwrightMissingBrowserRegex reconoce el aviso de navegador sin descargar.
 var playwrightMissingBrowserRegex = regexp.MustCompile(
 	`(?i)Executable doesn't exist|playwright install`,
 )
 
-// playwrightBrowsersMissing distingue, en la salida de Playwright, el caso de
-// navegadores sin instalar de un fallo genérico del codegen o del run.
 func playwrightBrowsersMissing(output string) bool {
 	return playwrightMissingBrowserRegex.MatchString(output)
 }
 
-// printPlaywrightInstallHint guía a instalar los navegadores de Playwright en vez
-// de dejar al usuario con un "exit status 1" sin contexto.
+// installPlaywrightBrowsers descarga chromium cuando falta (hereda stdout/stderr).
+func installPlaywrightBrowsers() error {
+	cmd := exec.Command("npx", playwrightNpxArgs("install", "chromium")...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 func printPlaywrightInstallHint() {
 	ui.PrintError("Los navegadores de Playwright no están instalados.")
 	ui.PrintHint("Instálalos con:  npx playwright install chromium")
 	ui.PrintHint("Después vuelve a correr:  oraculo record")
 }
-
 
 func playwrightNpxArgs(sub ...string) []string {
 	return append([]string{"--yes", "--package", "@playwright/test", "playwright"}, sub...)
@@ -416,6 +438,52 @@ func stripStorageState(spec string) string {
 	return storageStateUseRegex.ReplaceAllString(spec, "\n")
 }
 
+// recordedActionRegex captura el locator y el método de una acción de codegen de una línea.
+var recordedActionRegex = regexp.MustCompile(
+	`^(\s*)(await\s+.+?)\.(fill|click|dblclick|press|selectOption|check|uncheck)\((.*)\);\s*$`,
+)
+
+// cleanRecordedSpec quita el ruido de codegen: colapsa fill() consecutivos sobre el
+// mismo locator (deja el último) y descarta los press('CapsLock'). Sin esto un input
+// "Odoo Inc" se promueve como 4 inputs. Los clicks se respetan (pueden ser intencionales).
+func cleanRecordedSpec(spec string) string {
+	lines := strings.Split(spec, "\n")
+	out := make([]string, 0, len(lines))
+
+	lastFillIdx := -1
+	lastFillLocator := ""
+
+	for _, line := range lines {
+		m := recordedActionRegex.FindStringSubmatch(line)
+		if m != nil {
+			locator, method, args := m[2], m[3], m[4]
+
+			if method == "press" && strings.Contains(args, "CapsLock") {
+				continue
+			}
+
+			// fill consecutivo sobre el mismo locator → reemplaza el anterior.
+			if method == "fill" && lastFillIdx >= 0 && locator == lastFillLocator {
+				out[lastFillIdx] = line
+				continue
+			}
+			if method == "fill" {
+				out = append(out, line)
+				lastFillIdx = len(out) - 1
+				lastFillLocator = locator
+				continue
+			}
+		}
+
+		// Cualquier otra línea corta la racha de fills.
+		lastFillIdx = -1
+		lastFillLocator = ""
+		out = append(out, line)
+	}
+
+	return strings.Join(out, "\n")
+}
+
 func buildPlaywrightConfig(absSpecPath, authStatePath string) string {
 	specDir := filepath.Dir(absSpecPath)
 	specName := filepath.Base(absSpecPath)
@@ -441,10 +509,8 @@ export default defineConfig({
 `, specDir, specName, storageLine)
 }
 
-// loadAuthSessionForRecord baja el storageState guardado del proyecto a un archivo
-// temporal para grabar y reproducir ya autenticado. Devuelve ("", false) y avisa
-// si no estás logueado, el proyecto no tiene sesión, o falla la descarga — en ese
-// caso se graba sin sesión (best-effort, no rompe el record).
+// loadAuthSessionForRecord baja el storageState del proyecto a un temp para grabar ya
+// autenticado. Devuelve ("", false) y avisa si no hay sesión: se graba sin login (best-effort).
 func loadAuthSessionForRecord(config *Config) (string, bool) {
 	if config.RefId == "" || config.APIURL == "" {
 		ui.PrintWarning("Sin `refId`/`api_url` en config — grabando sin sesión. Usa --fresh para silenciar.")
