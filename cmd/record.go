@@ -48,6 +48,11 @@ var recordCmd = &cobra.Command{
 			return ui.Fail("Falta el campo `base_url` en oraculo.config.json.")
 		}
 
+		if !playwrightTestResolvable() {
+			printPlaywrightTestModuleHint()
+			return ui.ErrAlreadyReported
+		}
+
 		e2eDir := config.E2EDir
 		if e2eDir == "" {
 			e2eDir = "e2e"
@@ -181,11 +186,6 @@ var recordCmd = &cobra.Command{
 
 		if testErr != nil && playwrightBrowsersMissing(string(testOutput)) {
 			printPlaywrightInstallHint("oraculo record")
-			return ui.ErrAlreadyReported
-		}
-
-		if testErr != nil && playwrightTestModuleMissing(string(testOutput)) {
-			printPlaywrightTestModuleHint()
 			return ui.ErrAlreadyReported
 		}
 
@@ -389,14 +389,12 @@ func printPlaywrightInstallHint(retryCmd string) {
 	ui.PrintHint("Después vuelve a correr:  " + retryCmd)
 }
 
-// playwrightTestModuleMissingRegex reconoce cuando el proyecto no tiene
-// @playwright/test resoluble (el runner importa el paquete y Node no lo encuentra).
-var playwrightTestModuleMissingRegex = regexp.MustCompile(
-	`(?i)Cannot find module ['"]@playwright/test['"]`,
-)
-
-func playwrightTestModuleMissing(output string) bool {
-	return playwrightTestModuleMissingRegex.MatchString(output)
+// playwrightTestResolvable verifica que el proyecto pueda resolver
+// @playwright/test. El runner generado lo importa y Node lo resuelve subiendo
+// por node_modules desde el cwd, así que lo chequeamos igual antes de grabar.
+func playwrightTestResolvable() bool {
+	cmd := exec.Command("node", "-e", "require.resolve('@playwright/test')")
+	return cmd.Run() == nil
 }
 
 func printPlaywrightTestModuleHint() {
