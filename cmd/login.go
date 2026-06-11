@@ -4,18 +4,16 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"syscall"
 
 	"golang.org/x/term"
 
 	"github.com/delfosti-infra/oraculo-cli/internal/api"
+	"github.com/delfosti-infra/oraculo-cli/internal/config"
 	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
-
-const defaultAPIURL = "http://localhost:3000"
 
 var loginAPIURLFlag string
 
@@ -28,17 +26,13 @@ var loginCmd = &cobra.Command{
 	},
 }
 
-// resolveLoginAPIURL elige el API contra el cual loguear, en orden de prioridad:
-// el flag --api-url, luego api_url del oraculo.config.json del directorio actual,
-// y por último el default local.
-func resolveLoginAPIURL() string {
-	if loginAPIURLFlag != "" {
-		return loginAPIURLFlag
+// projectConfigAPIURL devuelve el api_url del oraculo.config.json del directorio
+// actual si existe, o "" cuando aún no se inicializó el proyecto.
+func projectConfigAPIURL() string {
+	if c, err := loadOraculoConfig(); err == nil {
+		return c.APIURL
 	}
-	if config, err := loadOraculoConfig(); err == nil && config.APIURL != "" {
-		return config.APIURL
-	}
-	return defaultAPIURL
+	return ""
 }
 
 func runLogin() error {
@@ -48,7 +42,7 @@ func runLogin() error {
 		"Conéctate con tu cuenta de DelfosTI para empezar.",
 	)
 
-	apiURL := strings.TrimRight(resolveLoginAPIURL(), "/")
+	apiURL := config.ResolveAPIURL(loginAPIURLFlag, projectConfigAPIURL())
 	ui.PrintStep(fmt.Sprintf("API: %s", apiURL))
 
 	reader := bufio.NewReader(os.Stdin)
@@ -76,21 +70,19 @@ func runLogin() error {
 	spinner.Stop()
 
 	if err != nil {
+		if api.IsConnectionError(err) {
+			ui.PrintError(fmt.Sprintf("No se pudo conectar con el backend de Oráculo en %s", apiURL))
+			ui.PrintHint("Verifica tu conexión. Para apuntar a otro backend usa --api-url o la variable ORACULO_API_URL.")
+			return ui.ErrAlreadyReported
+		}
 		return ui.Fail("%s", err)
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("no se pudo obtener el directorio home: %w", err)
+	if err := config.SaveToken(session.AccessToken); err != nil {
+		return err
 	}
-
-	oraculoDir := filepath.Join(homeDir, ".oraculo")
-	if err := os.MkdirAll(oraculoDir, 0700); err != nil {
-		return fmt.Errorf("no se pudo crear ~/.oraculo: %w", err)
-	}
-
-	if err := os.WriteFile(filepath.Join(oraculoDir, "token"), []byte(session.AccessToken), 0600); err != nil {
-		return fmt.Errorf("no se pudo guardar el token: %w", err)
+	if err := config.SaveGlobalAPIURL(apiURL); err != nil {
+		return err
 	}
 
 	ui.PrintSuccess(fmt.Sprintf(
@@ -98,11 +90,12 @@ func runLogin() error {
 		session.User.Email,
 		session.User.Role,
 	))
+	ui.PrintHint("Siguiente: 'oraculo init' para vincular tu proyecto.")
 
 	return nil
 }
 
 func init() {
-	loginCmd.Flags().StringVar(&loginAPIURLFlag, "api-url", "", "URL del API de Oráculo (default: api_url del oraculo.config.json o http://localhost:3000)")
+	loginCmd.Flags().StringVar(&loginAPIURLFlag, "api-url", "", "URL del backend de Oráculo (default: ORACULO_API_URL, api_url del proyecto, o el backend hosteado)")
 	rootCmd.AddCommand(loginCmd)
 }

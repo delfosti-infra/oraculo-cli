@@ -83,6 +83,12 @@ func PrintHint(message string) {
 	fmt.Printf("  %s %s\n", arrowStyle.Render("→"), hintStyle.Render(message))
 }
 
+// PrintCheckFail imprime una línea compacta de checklist fallida (✗), sin los
+// saltos extra de PrintError. Pensada para 'oraculo doctor' / 'oraculo check'.
+func PrintCheckFail(message string) {
+	fmt.Fprintf(os.Stderr, "  %s %s\n", errorMarkStyle.Render("✗"), labelStyle.Render(message))
+}
+
 func PrintWarning(message string) {
 	warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#C2902B")).Bold(true)
 	fmt.Fprintf(os.Stderr, "  %s %s\n", warningStyle.Render("!"), labelStyle.Render(message))

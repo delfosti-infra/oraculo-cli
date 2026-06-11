@@ -3,13 +3,24 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/delfosti-infra/oraculo-cli/internal/api/types"
 )
+
+// IsConnectionError reporta si err es una falla de transporte (no se pudo
+// conectar, DNS, timeout) en lugar de una respuesta de error del backend. Los
+// errores del cliente HTTP se envuelven en *url.Error antes de recibir respuesta;
+// un status no-2xx, en cambio, produce un error propio sin *url.Error.
+func IsConnectionError(err error) bool {
+	var urlErr *url.Error
+	return errors.As(err, &urlErr)
+}
 
 type Client struct {
 	baseURL    string
@@ -23,6 +34,18 @@ func NewClient(baseURL string) *Client {
 			Timeout: 30 * time.Second,
 		},
 	}
+}
+
+// Ping verifica conectividad con el backend: devuelve nil si el API responde por
+// HTTP (cualquier status, incluso 404), y un error de conexión si no se pudo
+// establecer transporte. Sirve para distinguir "backend caído" de "ruta inválida".
+func (c *Client) Ping() error {
+	resp, err := c.httpClient.Get(c.baseURL)
+	if err != nil {
+		return fmt.Errorf("no se pudo conectar con el API: %w", err)
+	}
+	defer resp.Body.Close()
+	return nil
 }
 
 func (c *Client) Login(email, password string) (*types.AuthSession, error) {

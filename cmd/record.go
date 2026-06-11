@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/delfosti-infra/oraculo-cli/internal/api"
+	appconfig "github.com/delfosti-infra/oraculo-cli/internal/config"
 	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -507,7 +508,7 @@ func loadAuthSessionForRecord(config *Config) (string, bool) {
 		return "", false
 	}
 
-	token, err := loadToken()
+	token, err := appconfig.LoadToken()
 	if err != nil {
 		ui.PrintWarning("No estás logueado — grabando sin sesión. Corre `oraculo login` + `oraculo auth`, o usa --fresh.")
 		return "", false

@@ -10,6 +10,7 @@ import (
 
 	"github.com/delfosti-infra/oraculo-cli/internal/api"
 	"github.com/delfosti-infra/oraculo-cli/internal/api/types"
+	appconfig "github.com/delfosti-infra/oraculo-cli/internal/config"
 	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -38,7 +39,7 @@ var initCmd = &cobra.Command{
 		}
 
 		config := Config{
-			APIURL: defaultAPIURL,
+			APIURL: appconfig.ResolveAPIURL("", ""),
 			E2EDir: "e2e",
 		}
 
@@ -72,7 +73,8 @@ var initCmd = &cobra.Command{
 		ui.PrintStep("oraculo.config.json generado")
 
 		if config.RefId != "" {
-			ui.PrintSuccess("Proyecto listo. Graba un flow con 'oraculo record <nombre>' y publica con 'oraculo push'.")
+			ui.PrintSuccess("Proyecto listo.")
+			ui.PrintHint("Siguiente: 'oraculo auth' para capturar tu sesión, luego 'oraculo record <nombre>'.")
 		} else {
 			ui.PrintSuccess("Config generada. Completa los campos faltantes y usa 'oraculo push'.")
 		}
@@ -101,7 +103,7 @@ func promptProjectSelection(projects []types.Project) *types.Project {
 }
 
 func selectProject(apiURL string) (*types.Project, error) {
-	token, err := loadToken()
+	token, err := appconfig.LoadToken()
 	if err != nil {
 		return nil, err
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/delfosti-infra/oraculo-cli/internal/api"
+	appconfig "github.com/delfosti-infra/oraculo-cli/internal/config"
 	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -68,7 +69,7 @@ func runAuthCapture() error {
 		return ui.Fail("Falta el campo `api_url` en oraculo.config.json.")
 	}
 
-	token, err := loadToken()
+	token, err := appconfig.LoadToken()
 	if err != nil {
 		return ui.Fail("%s", err)
 	}
@@ -133,7 +134,7 @@ func runAuthStatus() error {
 		return ui.Fail("Faltan `refId` o `api_url` en oraculo.config.json. Corre 'oraculo init'.")
 	}
 
-	token, err := loadToken()
+	token, err := appconfig.LoadToken()
 	if err != nil {
 		return ui.Fail("%s", err)
 	}
@@ -178,7 +179,7 @@ func runAuthClear() error {
 		return ui.Fail("Faltan `refId` o `api_url` en oraculo.config.json. Corre 'oraculo init'.")
 	}
 
-	token, err := loadToken()
+	token, err := appconfig.LoadToken()
 	if err != nil {
 		return ui.Fail("%s", err)
 	}

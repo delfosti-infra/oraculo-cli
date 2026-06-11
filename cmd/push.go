@@ -15,6 +15,7 @@ import (
 
 	"github.com/delfosti-infra/oraculo-cli/internal/api"
 	"github.com/delfosti-infra/oraculo-cli/internal/api/types"
+	appconfig "github.com/delfosti-infra/oraculo-cli/internal/config"
 	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -49,7 +50,7 @@ var pushCmd = &cobra.Command{
 			return ui.Fail("Falta el campo `api_url` en oraculo.config.json.")
 		}
 
-		token, err := loadToken()
+		token, err := appconfig.LoadToken()
 		if err != nil {
 			return ui.Fail("%s", err)
 		}
@@ -116,23 +117,6 @@ var pushCmd = &cobra.Command{
 		ui.PrintSuccess(fmt.Sprintf("%d flow(s) subido(s) exitosamente", ok))
 		return nil
 	},
-}
-
-func loadToken() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("no se pudo obtener el directorio home: %w", err)
-	}
-	tokenPath := filepath.Join(home, ".oraculo", "token")
-	data, err := os.ReadFile(tokenPath)
-	if err != nil {
-		return "", fmt.Errorf("no se encontró token en ~/.oraculo/token. Corre 'oraculo login' primero")
-	}
-	token := strings.TrimSpace(string(data))
-	if token == "" {
-		return "", fmt.Errorf("token vacío. Corre 'oraculo login' de nuevo")
-	}
-	return token, nil
 }
 
 func discoverFlows(e2eDir string) ([]string, error) {

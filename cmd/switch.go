@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	appconfig "github.com/delfosti-infra/oraculo-cli/internal/config"
 	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -25,10 +26,7 @@ var switchCmd = &cobra.Command{
 			return ui.Fail("%s", err)
 		}
 
-		apiURL := config.APIURL
-		if apiURL == "" {
-			apiURL = defaultAPIURL
-		}
+		apiURL := appconfig.ResolveAPIURL("", config.APIURL)
 
 		selected, err := selectProject(apiURL)
 		if err != nil {
