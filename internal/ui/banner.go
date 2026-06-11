@@ -20,12 +20,12 @@ const asciiLogo = ` ██████╗ ██████╗  █████
  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ `
 
 var (
-	colorGold    = lipgloss.Color("#B8924A")
-	colorInk     = lipgloss.Color("#1A1814")
-	colorInkSoft = lipgloss.Color("#4A453B")
-	colorInkMute = lipgloss.Color("#8A8474")
-	colorSuccess = lipgloss.Color("#5B8C5A")
-	colorDarkBg  = lipgloss.Color("#2A241B")
+	colorGold    = Gold
+	colorInk     = Ink
+	colorInkSoft = InkSoft
+	colorInkMute = InkMute
+	colorSuccess = Success
+	colorDarkBg  = DarkBg
 )
 
 var (

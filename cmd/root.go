@@ -5,6 +5,7 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/delfosti-infra/oraculo-cli/internal/tui"
 	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -14,9 +15,12 @@ var rootCmd = &cobra.Command{
 	Short:        "CLI oficial de Oráculo - DelfosTI",
 	Version:      resolveVersion(),
 	SilenceUsage: true,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		ui.PrintBanner()
-		_ = cmd.Help()
+		if tui.IsInteractive() {
+			return tui.Run(cmd.Root())
+		}
+		return cmd.Help()
 	},
 }
 

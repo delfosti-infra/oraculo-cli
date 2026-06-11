@@ -20,7 +20,7 @@ var (
 var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Captura y guarda la sesión autenticada del proyecto (storageState)",
-	Long: "Abre un browser contra el base_url del proyecto: logueate y cerralo.\n" +
+	Long: "Abre un browser contra el base_url del proyecto: inicia sesión y ciérralo.\n" +
 		"Oráculo guarda la sesión (cookies + localStorage) cifrada en el core para\n" +
 		"que puedas grabar y correr flows ya autenticado, sin grabar el login.",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -48,7 +48,7 @@ func runAuthCapture() error {
 	ui.PrintHeader(
 		"AUTH",
 		"Captura la sesión del proyecto",
-		"Abre un browser; logueate y cerralo. La sesión queda cifrada para grabar/correr autenticado.",
+		"Abre un browser; inicia sesión y ciérralo. La sesión queda cifrada para grabar/correr autenticado.",
 	)
 
 	config, err := loadOraculoConfig()
@@ -82,9 +82,9 @@ func runAuthCapture() error {
 	}
 	tmpPath := tmp.Name()
 	tmp.Close()
-	defer os.Remove(tmpPath) // el storageState es el secreto: borralo siempre
+	defer os.Remove(tmpPath) // el storageState es el secreto: bórralo siempre
 
-	ui.PrintStep(fmt.Sprintf("Abriendo browser contra %s — logueate y cerralo", config.BaseURL))
+	ui.PrintStep(fmt.Sprintf("Abriendo browser contra %s — inicia sesión y ciérralo", config.BaseURL))
 
 	open := exec.Command("npx", "playwright", "open", "--save-storage="+tmpPath, config.BaseURL)
 	open.Stdin = os.Stdin
