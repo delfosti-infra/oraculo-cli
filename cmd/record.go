@@ -184,6 +184,11 @@ var recordCmd = &cobra.Command{
 			return ui.ErrAlreadyReported
 		}
 
+		if testErr != nil && playwrightTestModuleMissing(string(testOutput)) {
+			printPlaywrightTestModuleHint()
+			return ui.ErrAlreadyReported
+		}
+
 		screenshots := countScreenshots(screenshotsDir)
 		if screenshots == 0 {
 			ui.PrintError("No se capturaron screenshots. Output de Playwright:")
@@ -382,6 +387,23 @@ func printPlaywrightInstallHint(retryCmd string) {
 	ui.PrintError("Los navegadores de Playwright no están instalados.")
 	ui.PrintHint("Instálalos con:  npx playwright install chromium")
 	ui.PrintHint("Después vuelve a correr:  " + retryCmd)
+}
+
+// playwrightTestModuleMissingRegex reconoce cuando el proyecto no tiene
+// @playwright/test resoluble (el runner importa el paquete y Node no lo encuentra).
+var playwrightTestModuleMissingRegex = regexp.MustCompile(
+	`(?i)Cannot find module ['"]@playwright/test['"]`,
+)
+
+func playwrightTestModuleMissing(output string) bool {
+	return playwrightTestModuleMissingRegex.MatchString(output)
+}
+
+func printPlaywrightTestModuleHint() {
+	ui.PrintError("Falta el paquete @playwright/test en tu proyecto.")
+	ui.PrintHint("Instálalo en la raíz del proyecto (donde está oraculo.config.json) con:")
+	ui.PrintHint("  npm install -D @playwright/test")
+	ui.PrintHint("Después vuelve a correr:  oraculo record")
 }
 
 func playwrightNpxArgs(sub ...string) []string {
