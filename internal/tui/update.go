@@ -15,11 +15,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case commandFinishedMsg:
-		m.history = append(m.history, historyEntry{line: msg.line, ok: msg.err == nil})
+		m.executing = false
 		m.input.SetValue("")
 		m.filtered = m.all
 		m.selected = 0
-		return m, nil
+		mark := successStyle.Render("✓")
+		if msg.err != nil {
+			mark = errorStyle.Render("✗")
+		}
+		return m, tea.Println("  " + mark + " " + historyStyle.Render(msg.line))
 
 	case tea.KeyMsg:
 		if m.mode == modeArgs {
@@ -131,6 +135,7 @@ func (m model) dispatch(c command, args []string) (tea.Model, tea.Cmd) {
 	m.filtered = m.all
 	m.selected = 0
 	m.mode = modePalette
+	m.executing = true
 	return m, runCommand(c.name, args)
 }
 

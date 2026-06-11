@@ -15,24 +15,19 @@ const (
 	modeArgs
 )
 
-type historyEntry struct {
-	line string
-	ok   bool
-}
-
 type model struct {
-	root     *cobra.Command
-	all      []command
-	filtered []command
-	input    textinput.Model
-	argInput textinput.Model
-	selected int
-	mode     viewMode
-	pending  command
-	history  []historyEntry
-	width    int
-	height   int
-	quitting bool
+	root      *cobra.Command
+	all       []command
+	filtered  []command
+	input     textinput.Model
+	argInput  textinput.Model
+	selected  int
+	mode      viewMode
+	pending   command
+	executing bool
+	width     int
+	height    int
+	quitting  bool
 }
 
 func newModel(root *cobra.Command) model {

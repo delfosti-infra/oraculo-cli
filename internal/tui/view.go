@@ -5,30 +5,19 @@ import (
 	"strings"
 )
 
-const maxHistoryLines = 6
-
 func (m model) View() string {
 	if m.quitting {
 		return ""
 	}
+	// Frame mínimo mientras el subcomando tiene la terminal: el flush previo a
+	// ceder borra el prompt/footer y no quedan frames duplicados en el scrollback.
+	// El resultado se registra como línea persistente (tea.Println) al terminar.
+	if m.executing {
+		return "\n"
+	}
 
 	var b strings.Builder
 	b.WriteString("\n")
-
-	if len(m.history) > 0 {
-		start := 0
-		if len(m.history) > maxHistoryLines {
-			start = len(m.history) - maxHistoryLines
-		}
-		for _, h := range m.history[start:] {
-			mark := successStyle.Render("✓")
-			if !h.ok {
-				mark = errorStyle.Render("✗")
-			}
-			b.WriteString(fmt.Sprintf("  %s %s\n", mark, historyStyle.Render(h.line)))
-		}
-		b.WriteString("\n")
-	}
 
 	if m.mode == modeArgs {
 		b.WriteString(fmt.Sprintf("  %s %s\n", promptStyle.Render(m.pending.name), m.argInput.View()))
