@@ -13,6 +13,7 @@ import (
 var checkCmd = &cobra.Command{
 	Use:   "check",
 	Short: "Valida los specs del proyecto",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ui.PrintHeader(
 			"VALIDACIÓN",
@@ -23,32 +24,27 @@ var checkCmd = &cobra.Command{
 		var config Config
 
 		if _, err := os.Stat("oraculo.config.json"); err != nil {
-			ui.PrintError("No se encontró oraculo.config.json. Ejecuta 'oraculo init' primero.")
-			return nil
+			return ui.Fail("No se encontró oraculo.config.json. Ejecuta 'oraculo init' primero.")
 		}
 		ui.PrintStep("oraculo.config.json encontrado")
 
 		data, err := os.ReadFile("oraculo.config.json")
 		if err != nil {
-			ui.PrintError(fmt.Sprintf("No se pudo leer oraculo.config.json: %s", err))
-			return nil
+			return ui.Fail("No se pudo leer oraculo.config.json: %s", err)
 		}
 
 		if err := json.Unmarshal(data, &config); err != nil {
-			ui.PrintError(fmt.Sprintf("oraculo.config.json tiene formato inválido: %s", err))
-			return nil
+			return ui.Fail("oraculo.config.json tiene formato inválido: %s", err)
 		}
 		ui.PrintStep("Estructura JSON válida")
 
 		if config.Project == "" || config.RefId == "" || config.BaseURL == "" {
-			ui.PrintError("oraculo.config.json incompleto. Completa project, refId y base_url (o corre 'oraculo init').")
-			return nil
+			return ui.Fail("oraculo.config.json incompleto. Completa project, refId y base_url (o corre 'oraculo init').")
 		}
 		ui.PrintStep("Campos obligatorios completos")
 
 		if _, err := os.Stat(config.E2EDir); err != nil {
-			ui.PrintError(fmt.Sprintf("Directorio %s no encontrado.", config.E2EDir))
-			return nil
+			return ui.Fail("Directorio %s no encontrado.", config.E2EDir)
 		}
 		ui.PrintStep(fmt.Sprintf("Directorio %s/ encontrado", config.E2EDir))
 
@@ -60,12 +56,10 @@ var checkCmd = &cobra.Command{
 
 		specs, err := filepath.Glob(config.E2EDir + "/**/*.spec.ts")
 		if err != nil {
-			ui.PrintError(fmt.Sprintf("Error al buscar specs: %s", err))
-			return nil
+			return ui.Fail("Error al buscar specs: %s", err)
 		}
 		if len(specs) == 0 {
-			ui.PrintError(fmt.Sprintf("No se encontraron specs en %s/", config.E2EDir))
-			return nil
+			return ui.Fail("No se encontraron specs en %s/", config.E2EDir)
 		}
 		ui.PrintStep(fmt.Sprintf("%d spec(s) detectado(s)", len(specs)))
 

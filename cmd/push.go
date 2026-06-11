@@ -40,22 +40,18 @@ var pushCmd = &cobra.Command{
 
 		config, err := loadOraculoConfig()
 		if err != nil {
-			ui.PrintError(err.Error())
-			return nil
+			return ui.Fail("%s", err)
 		}
 		if config.RefId == "" {
-			ui.PrintError("Falta el campo `refId` en oraculo.config.json. Corre 'oraculo init' para seleccionar el proyecto.")
-			return nil
+			return ui.Fail("Falta el campo `refId` en oraculo.config.json. Corre 'oraculo init' para seleccionar el proyecto.")
 		}
 		if config.APIURL == "" {
-			ui.PrintError("Falta el campo `api_url` en oraculo.config.json.")
-			return nil
+			return ui.Fail("Falta el campo `api_url` en oraculo.config.json.")
 		}
 
 		token, err := loadToken()
 		if err != nil {
-			ui.PrintError(err.Error())
-			return nil
+			return ui.Fail("%s", err)
 		}
 
 		e2eDir := config.E2EDir
@@ -69,12 +65,10 @@ var pushCmd = &cobra.Command{
 		} else {
 			targetSlugs, err = discoverFlows(e2eDir)
 			if err != nil {
-				ui.PrintError(err.Error())
-				return nil
+				return ui.Fail("%s", err)
 			}
 			if len(targetSlugs) == 0 {
-				ui.PrintError("No se encontraron specs en " + e2eDir + "/. Corre 'oraculo record <nombre>' primero.")
-				return nil
+				return ui.Fail("No se encontraron specs en %s/. Corre 'oraculo record <nombre>' primero.", e2eDir)
 			}
 		}
 
@@ -116,11 +110,10 @@ var pushCmd = &cobra.Command{
 			}
 		}
 
-		if fail == 0 {
-			ui.PrintSuccess(fmt.Sprintf("%d flow(s) subido(s) exitosamente", ok))
-		} else {
-			ui.PrintError(fmt.Sprintf("%d ok · %d con error", ok, fail))
+		if fail > 0 {
+			return ui.Fail("%d ok · %d con error", ok, fail)
 		}
+		ui.PrintSuccess(fmt.Sprintf("%d flow(s) subido(s) exitosamente", ok))
 		return nil
 	},
 }

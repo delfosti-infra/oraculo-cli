@@ -30,8 +30,7 @@ var recordCmd = &cobra.Command{
 		rawName := args[0]
 		slug := slugify(rawName)
 		if slug == "" {
-			ui.PrintError("El nombre tiene que tener al menos un caracter alfanumérico.")
-			return nil
+			return ui.Fail("El nombre tiene que tener al menos un caracter alfanumérico.")
 		}
 
 		ui.PrintHeader(
@@ -42,12 +41,10 @@ var recordCmd = &cobra.Command{
 
 		config, err := loadOraculoConfig()
 		if err != nil {
-			ui.PrintError(err.Error())
-			return nil
+			return ui.Fail("%s", err)
 		}
 		if config.BaseURL == "" {
-			ui.PrintError("Falta el campo `base_url` en oraculo.config.json.")
-			return nil
+			return ui.Fail("Falta el campo `base_url` en oraculo.config.json.")
 		}
 
 		e2eDir := config.E2EDir
@@ -55,8 +52,7 @@ var recordCmd = &cobra.Command{
 			e2eDir = "e2e"
 		}
 		if err := os.MkdirAll(e2eDir, 0755); err != nil {
-			ui.PrintError(fmt.Sprintf("No se pudo crear %s/: %s", e2eDir, err))
-			return nil
+			return ui.Fail("No se pudo crear %s/: %s", e2eDir, err)
 		}
 
 		specPath := filepath.Join(e2eDir, slug+".spec.ts")
@@ -110,36 +106,32 @@ var recordCmd = &cobra.Command{
 			ui.PrintStep("Faltan los navegadores de Playwright — descargando chromium (una sola vez)…")
 			if installErr := installPlaywrightBrowsers(); installErr != nil {
 				printPlaywrightInstallHint()
-				return nil
+				return ui.ErrAlreadyReported
 			}
 			codegenStderr, codegenErr = runCodegen()
 		}
 		if codegenErr != nil {
 			if playwrightBrowsersMissing(codegenStderr) {
 				printPlaywrightInstallHint()
-				return nil
+				return ui.ErrAlreadyReported
 			}
-			ui.PrintError(fmt.Sprintf("Codegen no terminó bien: %s", codegenErr))
-			return nil
+			return ui.Fail("Codegen no terminó bien: %s", codegenErr)
 		}
 
 		if _, err := os.Stat(specPath); err != nil {
-			ui.PrintError("Codegen no generó spec. ¿Cerraste el browser sin grabar?")
-			return nil
+			return ui.Fail("Codegen no generó spec. ¿Cerraste el browser sin grabar?")
 		}
 		ui.PrintStep("Spec generado: " + specPath)
 
 		specContent, err := os.ReadFile(specPath)
 		if err != nil {
-			ui.PrintError(fmt.Sprintf("No se pudo leer el spec: %s", err))
-			return nil
+			return ui.Fail("No se pudo leer el spec: %s", err)
 		}
 
 		specContent = []byte(cleanRecordedSpec(stripStorageState(string(specContent))))
 
 		if err := os.MkdirAll(screenshotsDir, 0755); err != nil {
-			ui.PrintError(fmt.Sprintf("No se pudo crear %s: %s", screenshotsDir, err))
-			return nil
+			return ui.Fail("No se pudo crear %s: %s", screenshotsDir, err)
 		}
 		_ = os.RemoveAll(screenshotsDir)
 		_ = os.MkdirAll(screenshotsDir, 0755)
@@ -152,8 +144,7 @@ var recordCmd = &cobra.Command{
 		instrumented := instrumentSpec(string(specContent), absScreenshotsDir)
 
 		if err := os.WriteFile(specPath, []byte(instrumented), 0644); err != nil {
-			ui.PrintError(fmt.Sprintf("No se pudo escribir spec instrumentado: %s", err))
-			return nil
+			return ui.Fail("No se pudo escribir spec instrumentado: %s", err)
 		}
 		defer func() {
 			_ = os.WriteFile(specPath, specContent, 0644)
@@ -171,8 +162,7 @@ var recordCmd = &cobra.Command{
 		configContent := buildPlaywrightConfig(absSpecPath, authStatePath)
 		if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
 			spinner.Stop()
-			ui.PrintError(fmt.Sprintf("No se pudo escribir config temporal: %s", err))
-			return nil
+			return ui.Fail("No se pudo escribir config temporal: %s", err)
 		}
 
 		runTest := exec.Command(
@@ -190,14 +180,14 @@ var recordCmd = &cobra.Command{
 
 		if testErr != nil && playwrightBrowsersMissing(string(testOutput)) {
 			printPlaywrightInstallHint()
-			return nil
+			return ui.ErrAlreadyReported
 		}
 
 		screenshots := countScreenshots(screenshotsDir)
 		if screenshots == 0 {
 			ui.PrintError("No se capturaron screenshots. Output de Playwright:")
 			fmt.Println(string(testOutput))
-			return nil
+			return ui.ErrAlreadyReported
 		}
 		ui.PrintStep(fmt.Sprintf("%d screenshot(s) en %s/", screenshots, screenshotsDir))
 

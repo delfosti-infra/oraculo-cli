@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -21,6 +22,7 @@ var loginAPIURLFlag string
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Autentica tu cuenta de Oráculo",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runLogin()
 	},
@@ -74,8 +76,7 @@ func runLogin() error {
 	spinner.Stop()
 
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 
 	homeDir, err := os.UserHomeDir()
@@ -83,12 +84,12 @@ func runLogin() error {
 		return fmt.Errorf("no se pudo obtener el directorio home: %w", err)
 	}
 
-	oraculoDir := homeDir + "/.oraculo"
+	oraculoDir := filepath.Join(homeDir, ".oraculo")
 	if err := os.MkdirAll(oraculoDir, 0700); err != nil {
 		return fmt.Errorf("no se pudo crear ~/.oraculo: %w", err)
 	}
 
-	if err := os.WriteFile(oraculoDir+"/token", []byte(session.AccessToken), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(oraculoDir, "token"), []byte(session.AccessToken), 0600); err != nil {
 		return fmt.Errorf("no se pudo guardar el token: %w", err)
 	}
 

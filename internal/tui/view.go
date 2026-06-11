@@ -21,7 +21,7 @@ func (m model) View() string {
 			start = len(m.history) - maxHistoryLines
 		}
 		for _, h := range m.history[start:] {
-			mark := historyStyle.Render("›")
+			mark := successStyle.Render("✓")
 			if !h.ok {
 				mark = errorStyle.Render("✗")
 			}

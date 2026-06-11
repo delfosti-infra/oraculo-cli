@@ -20,6 +20,7 @@ var (
 var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Captura y guarda la sesión autenticada del proyecto (storageState)",
+	Args:  cobra.NoArgs,
 	Long: "Abre un browser contra el base_url del proyecto: inicia sesión y ciérralo.\n" +
 		"Oráculo guarda la sesión (cookies + localStorage) cifrada en el core para\n" +
 		"que puedas grabar y correr flows ya autenticado, sin grabar el login.",
@@ -31,6 +32,7 @@ var authCmd = &cobra.Command{
 var authStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Muestra el estado de la sesión guardada del proyecto",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runAuthStatus()
 	},
@@ -39,6 +41,7 @@ var authStatusCmd = &cobra.Command{
 var authClearCmd = &cobra.Command{
 	Use:   "clear",
 	Short: "Borra la sesión guardada del proyecto",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runAuthClear()
 	},
@@ -53,32 +56,26 @@ func runAuthCapture() error {
 
 	config, err := loadOraculoConfig()
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 	if config.BaseURL == "" {
-		ui.PrintError("Falta el campo `base_url` en oraculo.config.json.")
-		return nil
+		return ui.Fail("Falta el campo `base_url` en oraculo.config.json.")
 	}
 	if config.RefId == "" {
-		ui.PrintError("Falta el campo `refId` en oraculo.config.json. Corre 'oraculo init'.")
-		return nil
+		return ui.Fail("Falta el campo `refId` en oraculo.config.json. Corre 'oraculo init'.")
 	}
 	if config.APIURL == "" {
-		ui.PrintError("Falta el campo `api_url` en oraculo.config.json.")
-		return nil
+		return ui.Fail("Falta el campo `api_url` en oraculo.config.json.")
 	}
 
 	token, err := loadToken()
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 
 	tmp, err := os.CreateTemp("", "oraculo-auth-*.json")
 	if err != nil {
-		ui.PrintError(fmt.Sprintf("No se pudo crear archivo temporal: %s", err))
-		return nil
+		return ui.Fail("No se pudo crear archivo temporal: %s", err)
 	}
 	tmpPath := tmp.Name()
 	tmp.Close()
@@ -91,20 +88,17 @@ func runAuthCapture() error {
 	open.Stdout = os.Stdout
 	open.Stderr = os.Stderr
 	if err := open.Run(); err != nil {
-		ui.PrintError(fmt.Sprintf("Playwright no terminó bien: %s", err))
-		return nil
+		return ui.Fail("Playwright no terminó bien: %s", err)
 	}
 
 	stateData, err := os.ReadFile(tmpPath)
 	if err != nil || len(stateData) == 0 {
-		ui.PrintError("No se capturó la sesión. ¿Cerraste el browser sin loguearte?")
-		return nil
+		return ui.Fail("No se capturó la sesión. ¿Cerraste el browser sin loguearte?")
 	}
 
 	var probe map[string]any
 	if err := json.Unmarshal(stateData, &probe); err != nil {
-		ui.PrintError("El storageState capturado no es JSON válido.")
-		return nil
+		return ui.Fail("El storageState capturado no es JSON válido.")
 	}
 
 	apiClient := api.NewClient(strings.TrimRight(config.APIURL, "/"))
@@ -116,8 +110,7 @@ func runAuthCapture() error {
 		authExpiresInDaysFlag,
 	)
 	if err != nil {
-		ui.PrintError(fmt.Sprintf("No se pudo guardar la sesión: %s", err))
-		return nil
+		return ui.Fail("No se pudo guardar la sesión: %s", err)
 	}
 
 	expiry := "sin expiración"
@@ -134,25 +127,21 @@ func runAuthCapture() error {
 func runAuthStatus() error {
 	config, err := loadOraculoConfig()
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 	if config.RefId == "" || config.APIURL == "" {
-		ui.PrintError("Faltan `refId` o `api_url` en oraculo.config.json. Corre 'oraculo init'.")
-		return nil
+		return ui.Fail("Faltan `refId` o `api_url` en oraculo.config.json. Corre 'oraculo init'.")
 	}
 
 	token, err := loadToken()
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 
 	apiClient := api.NewClient(strings.TrimRight(config.APIURL, "/"))
 	meta, err := apiClient.GetAuthSessionStatus(token, config.RefId)
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 	if meta == nil {
 		ui.PrintStep(fmt.Sprintf(
@@ -183,24 +172,20 @@ func runAuthStatus() error {
 func runAuthClear() error {
 	config, err := loadOraculoConfig()
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 	if config.RefId == "" || config.APIURL == "" {
-		ui.PrintError("Faltan `refId` o `api_url` en oraculo.config.json. Corre 'oraculo init'.")
-		return nil
+		return ui.Fail("Faltan `refId` o `api_url` en oraculo.config.json. Corre 'oraculo init'.")
 	}
 
 	token, err := loadToken()
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 
 	apiClient := api.NewClient(strings.TrimRight(config.APIURL, "/"))
 	if err := apiClient.DeleteAuthSession(token, config.RefId); err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 	ui.PrintSuccess(fmt.Sprintf("Sesión del proyecto '%s' borrada.", config.Project))
 	return nil

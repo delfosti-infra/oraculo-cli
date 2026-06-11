@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"runtime/debug"
 
@@ -11,10 +11,11 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:          "oraculo",
-	Short:        "CLI oficial de Oráculo - DelfosTI",
-	Version:      resolveVersion(),
-	SilenceUsage: true,
+	Use:           "oraculo",
+	Short:         "CLI oficial de Oráculo - DelfosTI",
+	Version:       resolveVersion(),
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ui.PrintBanner()
 		if tui.IsInteractive() {
@@ -41,7 +42,9 @@ func resolveVersion() string {
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		if !errors.Is(err, ui.ErrAlreadyReported) {
+			ui.PrintError(err.Error())
+		}
 		os.Exit(1)
 	}
 }

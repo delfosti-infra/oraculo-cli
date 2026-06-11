@@ -25,6 +25,7 @@ type Config struct {
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Inicializa Oráculo en el proyecto actual",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ui.PrintHeader(
 			"INICIO",
@@ -33,8 +34,7 @@ var initCmd = &cobra.Command{
 		)
 
 		if _, err := os.Stat("oraculo.config.json"); err == nil {
-			ui.PrintError("Ya existe oraculo.config.json — el proyecto ya está inicializado.")
-			return nil
+			return ui.Fail("Ya existe oraculo.config.json — el proyecto ya está inicializado.")
 		}
 
 		config := Config{
@@ -44,8 +44,7 @@ var initCmd = &cobra.Command{
 
 		if _, err := os.Stat("e2e"); os.IsNotExist(err) {
 			if err := os.Mkdir("e2e", 0755); err != nil {
-				ui.PrintError(fmt.Sprintf("No se pudo crear e2e/: %s", err))
-				return nil
+				return ui.Fail("No se pudo crear e2e/: %s", err)
 			}
 			ui.PrintStep("Carpeta e2e/ creada")
 		} else {
@@ -64,13 +63,11 @@ var initCmd = &cobra.Command{
 
 		data, err := json.MarshalIndent(config, "", "  ")
 		if err != nil {
-			ui.PrintError(fmt.Sprintf("No se pudo generar la configuración: %s", err))
-			return nil
+			return ui.Fail("No se pudo generar la configuración: %s", err)
 		}
 
 		if err := os.WriteFile("oraculo.config.json", data, 0644); err != nil {
-			ui.PrintError(fmt.Sprintf("No se pudo crear oraculo.config.json: %s", err))
-			return nil
+			return ui.Fail("No se pudo crear oraculo.config.json: %s", err)
 		}
 		ui.PrintStep("oraculo.config.json generado")
 

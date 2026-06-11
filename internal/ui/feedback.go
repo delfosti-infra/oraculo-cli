@@ -1,12 +1,25 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
+
+// ErrAlreadyReported marca un fallo cuyo detalle ya se imprimió;
+// root solo debe salir con código 1 sin volver a imprimirlo.
+var ErrAlreadyReported = errors.New("fallo ya reportado")
+
+// Fail imprime el error con estilo y devuelve ErrAlreadyReported
+// para que el comando propague exit code 1.
+func Fail(format string, args ...any) error {
+	PrintError(fmt.Sprintf(format, args...))
+	return ErrAlreadyReported
+}
 
 var (
 	headerStyle = lipgloss.NewStyle().
@@ -59,7 +72,7 @@ func PrintSuccess(message string) {
 }
 
 func PrintError(message string) {
-	fmt.Printf("\n  %s %s\n\n", errorMarkStyle.Render("✗"), message)
+	fmt.Fprintf(os.Stderr, "\n  %s %s\n\n", errorMarkStyle.Render("✗"), message)
 }
 
 func PrintStep(message string) {
@@ -72,7 +85,7 @@ func PrintHint(message string) {
 
 func PrintWarning(message string) {
 	warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#C2902B")).Bold(true)
-	fmt.Printf("  %s %s\n", warningStyle.Render("!"), labelStyle.Render(message))
+	fmt.Fprintf(os.Stderr, "  %s %s\n", warningStyle.Render("!"), labelStyle.Render(message))
 }
 
 func padRight(s string, width int) string {
