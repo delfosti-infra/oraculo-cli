@@ -106,14 +106,14 @@ var recordCmd = &cobra.Command{
 			// Falta chromium (máquina nueva): lo instalamos y reintentamos.
 			ui.PrintStep("Faltan los navegadores de Playwright — descargando chromium (una sola vez)…")
 			if installErr := installPlaywrightBrowsers(); installErr != nil {
-				printPlaywrightInstallHint()
+				printPlaywrightInstallHint("oraculo record")
 				return ui.ErrAlreadyReported
 			}
 			codegenStderr, codegenErr = runCodegen()
 		}
 		if codegenErr != nil {
 			if playwrightBrowsersMissing(codegenStderr) {
-				printPlaywrightInstallHint()
+				printPlaywrightInstallHint("oraculo record")
 				return ui.ErrAlreadyReported
 			}
 			return ui.Fail("Codegen no terminó bien: %s", codegenErr)
@@ -180,7 +180,7 @@ var recordCmd = &cobra.Command{
 		spinner.Stop()
 
 		if testErr != nil && playwrightBrowsersMissing(string(testOutput)) {
-			printPlaywrightInstallHint()
+			printPlaywrightInstallHint("oraculo record")
 			return ui.ErrAlreadyReported
 		}
 
@@ -378,10 +378,10 @@ func installPlaywrightBrowsers() error {
 	return cmd.Run()
 }
 
-func printPlaywrightInstallHint() {
+func printPlaywrightInstallHint(retryCmd string) {
 	ui.PrintError("Los navegadores de Playwright no están instalados.")
 	ui.PrintHint("Instálalos con:  npx playwright install chromium")
-	ui.PrintHint("Después vuelve a correr:  oraculo record")
+	ui.PrintHint("Después vuelve a correr:  " + retryCmd)
 }
 
 func playwrightNpxArgs(sub ...string) []string {

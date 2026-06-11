@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -84,12 +86,32 @@ func runAuthCapture() error {
 
 	ui.PrintStep(fmt.Sprintf("Abriendo browser contra %s — inicia sesión y ciérralo", config.BaseURL))
 
-	open := exec.Command("npx", "playwright", "open", "--save-storage="+tmpPath, config.BaseURL)
-	open.Stdin = os.Stdin
-	open.Stdout = os.Stdout
-	open.Stderr = os.Stderr
-	if err := open.Run(); err != nil {
-		return ui.Fail("Playwright no terminó bien: %s", err)
+	runOpen := func() (string, error) {
+		var stderr bytes.Buffer
+		open := exec.Command("npx", playwrightNpxArgs("open", "--save-storage="+tmpPath, config.BaseURL)...)
+		open.Stdin = os.Stdin
+		open.Stdout = os.Stdout
+		open.Stderr = io.MultiWriter(os.Stderr, &stderr)
+		err := open.Run()
+		return stderr.String(), err
+	}
+
+	openStderr, openErr := runOpen()
+	if openErr != nil && playwrightBrowsersMissing(openStderr) {
+		// Falta chromium (máquina nueva): lo instalamos y reintentamos.
+		ui.PrintStep("Faltan los navegadores de Playwright — descargando chromium (una sola vez)…")
+		if installErr := installPlaywrightBrowsers(); installErr != nil {
+			printPlaywrightInstallHint("oraculo auth")
+			return ui.ErrAlreadyReported
+		}
+		openStderr, openErr = runOpen()
+	}
+	if openErr != nil {
+		if playwrightBrowsersMissing(openStderr) {
+			printPlaywrightInstallHint("oraculo auth")
+			return ui.ErrAlreadyReported
+		}
+		return ui.Fail("Playwright no terminó bien: %s", openErr)
 	}
 
 	stateData, err := os.ReadFile(tmpPath)
