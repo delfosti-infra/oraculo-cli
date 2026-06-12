@@ -162,7 +162,7 @@ var recordCmd = &cobra.Command{
 			absScreenshotsDir = screenshotsDir
 		}
 
-		instrumented := instrumentSpec(string(specContent), absScreenshotsDir)
+		instrumented, stepCount := instrumentSpec(string(specContent), absScreenshotsDir)
 
 		if err := os.WriteFile(specPath, []byte(instrumented), 0644); err != nil {
 			return ui.Fail("No se pudo escribir spec instrumentado: %s", err)
@@ -180,7 +180,7 @@ var recordCmd = &cobra.Command{
 
 		absSpecPath, _ := filepath.Abs(specPath)
 		configPath := filepath.Join(outputDir, "playwright.config.ts")
-		configContent := buildPlaywrightConfig(absSpecPath, authStatePath)
+		configContent := buildPlaywrightConfig(absSpecPath, authStatePath, stepCount)
 		if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
 			spinner.Stop()
 			return ui.Fail("No se pudo escribir config temporal: %s", err)
@@ -251,7 +251,7 @@ func removeFlowArtifacts(e2eDir, slug string) {
 	_ = os.Remove(metaPath(e2eDir, slug))
 }
 
-func instrumentSpec(content, screenshotsDir string) string {
+func instrumentSpec(content, screenshotsDir string) (string, int) {
 	lines := strings.Split(content, "\n")
 	output := make([]string, 0, len(lines)*3)
 	stepCounter := 0
@@ -312,7 +312,7 @@ func instrumentSpec(content, screenshotsDir string) string {
 			indent, screenshotPath,
 		))
 	}
-	return strings.Join(output, "\n")
+	return strings.Join(output, "\n"), stepCounter
 }
 
 // isWrappableAction envuelve TODA acción `await …;` (no solo click/fill: también
@@ -523,9 +523,19 @@ func cleanRecordedSpec(spec string) string {
 	return strings.Join(out, "\n")
 }
 
-func buildPlaywrightConfig(absSpecPath, authStatePath string) string {
+// El timeout global del replay escala con los pasos instrumentados: cada paso
+// cuesta ~1-1.5s (acción + pausa de 400ms + screenshot, más networkidle al
+// navegar), así que 60s fijos cortaban flujos largos aunque anduvieran bien.
+// El freno por paso colgado sigue siendo actionTimeout (10s).
+const (
+	replayBaseTimeoutMs    = 60_000
+	replayPerStepTimeoutMs = 4_000
+)
+
+func buildPlaywrightConfig(absSpecPath, authStatePath string, stepCount int) string {
 	specDir := filepath.Dir(absSpecPath)
 	specName := filepath.Base(absSpecPath)
+	timeoutMs := replayBaseTimeoutMs + stepCount*replayPerStepTimeoutMs
 	storageLine := ""
 	if authStatePath != "" {
 		storageLine = fmt.Sprintf("\n    storageState: %q,", authStatePath)
@@ -535,7 +545,7 @@ func buildPlaywrightConfig(absSpecPath, authStatePath string) string {
 export default defineConfig({
   testDir: %q,
   testMatch: %q,
-  timeout: 60_000,
+  timeout: %d,
   retries: 0,
   workers: 1,
   use: {
@@ -545,7 +555,7 @@ export default defineConfig({
     ignoreHTTPSErrors: true,%s
   },
 });
-`, specDir, specName, storageLine)
+`, specDir, specName, timeoutMs, storageLine)
 }
 
 // loadAuthSessionForRecord baja el storageState del proyecto a un temp para grabar ya

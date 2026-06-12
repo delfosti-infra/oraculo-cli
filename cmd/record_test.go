@@ -17,7 +17,7 @@ test('t', async ({ page }) => {
   const download = await downloadPromise;
 });`
 
-	out := instrumentSpec(spec, "/tmp/s")
+	out, _ := instrumentSpec(spec, "/tmp/s")
 
 	if c := strings.Count(out, "catch (__oraculoErr)"); c != 5 {
 		t.Errorf("se esperaban 5 acciones envueltas, hay %d:\n%s", c, out)
@@ -44,7 +44,7 @@ test('t', async ({ page }) => {
   await page.getByRole('cell', { name: '1.00' }).nth(1).click();
 });`
 
-	out := instrumentSpec(spec, "/tmp/s")
+	out, _ := instrumentSpec(spec, "/tmp/s")
 
 	if !strings.Contains(out, "strict mode violation") {
 		t.Errorf("debe reintentar la acción ambigua en strict-mode:\n%s", out)
@@ -103,7 +103,7 @@ test('t', async ({ page }) => {
   const download = await downloadPromise;
 });`
 
-	out := instrumentSpec(spec, "/tmp/shots")
+	out, _ := instrumentSpec(spec, "/tmp/shots")
 
 	if c := strings.Count(out, "catch (__oraculoErr)"); c != 2 {
 		t.Errorf("se esperaban 2 acciones envueltas (goto + click), hay %d:\n%s", c, out)
@@ -117,6 +117,18 @@ test('t', async ({ page }) => {
 	}
 	if !strings.Contains(out, "step-1.png") || !strings.Contains(out, "step-2.png") {
 		t.Errorf("debe capturar un screenshot por paso envuelto:\n%s", out)
+	}
+}
+
+func TestBuildPlaywrightConfig_TimeoutScalesWithSteps(t *testing.T) {
+	short := buildPlaywrightConfig("/tmp/x.spec.ts", "", 0)
+	if !strings.Contains(short, "timeout: 60000,") {
+		t.Errorf("sin pasos instrumentados debe conservar el base de 60s:\n%s", short)
+	}
+
+	long := buildPlaywrightConfig("/tmp/x.spec.ts", "", 80)
+	if !strings.Contains(long, "timeout: 380000,") {
+		t.Errorf("con 80 pasos el timeout debe ser 60s + 80×4s = 380s:\n%s", long)
 	}
 }
 
