@@ -59,6 +59,14 @@ func runDoctor() error {
 		ui.PrintHint("Instálalos con: npx playwright install chromium")
 	}
 
+	if playwrightTestResolvable() {
+		ui.PrintStep("Paquete @playwright/test resoluble")
+	} else {
+		hardFail = true
+		ui.PrintCheckFail("Paquete @playwright/test no encontrado en este proyecto")
+		ui.PrintHint("Instálalo en la raíz del proyecto (donde está oraculo.config.json) con: npm install -D @playwright/test")
+	}
+
 	apiURL := appconfig.ResolveAPIURL("", projectConfigAPIURL())
 	client := api.NewClient(apiURL)
 	if err := client.Ping(); err != nil {

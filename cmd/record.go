@@ -49,8 +49,16 @@ var recordCmd = &cobra.Command{
 		}
 
 		if !playwrightTestResolvable() {
-			printPlaywrightTestModuleHint()
-			return ui.ErrAlreadyReported
+			ui.PrintWarning("Tu proyecto no tiene @playwright/test, necesario para grabar el flow.")
+			if !askYesNo("¿Lo instalo ahora con npm install -D @playwright/test? [S/n]", true) {
+				printPlaywrightTestModuleHint()
+				return ui.ErrAlreadyReported
+			}
+			if err := installPlaywrightTestPackage(); err != nil || !playwrightTestResolvable() {
+				printPlaywrightTestModuleHint()
+				return ui.ErrAlreadyReported
+			}
+			ui.PrintStep("@playwright/test instalado — sigo con la grabación")
 		}
 
 		e2eDir := config.E2EDir
@@ -76,6 +84,13 @@ var recordCmd = &cobra.Command{
 		}
 
 		huKeys := resolveHUsForRecord(recordHUFlag)
+
+		if !recordFreshFlag && looksLikeLoginFlow(slug) {
+			ui.PrintWarning("Parece que vas a grabar el flow de login. Con la sesión guardada el browser abre ya autenticado y el login no queda grabado.")
+			if askYesNo("¿Grabar con navegador limpio, sin la sesión guardada (--fresh)? [S/n]", true) {
+				recordFreshFlag = true
+			}
+		}
 
 		authStatePath, usesAuthSession := "", false
 		if !recordFreshFlag {
@@ -397,6 +412,19 @@ func playwrightTestResolvable() bool {
 	return cmd.Run() == nil
 }
 
+var loginFlowSlugRegex = regexp.MustCompile(`(^|-)(log-?in|sign-?in|inicio-de-sesion|iniciar-sesion|inicio-sesion)($|-)`)
+
+func looksLikeLoginFlow(slug string) bool {
+	return loginFlowSlugRegex.MatchString(slug)
+}
+
+func installPlaywrightTestPackage() error {
+	cmd := exec.Command("npm", "install", "-D", "@playwright/test")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 func printPlaywrightTestModuleHint() {
 	ui.PrintError("Falta el paquete @playwright/test en tu proyecto.")
 	ui.PrintHint("Instálalo en la raíz del proyecto (donde está oraculo.config.json) con:")
@@ -559,6 +587,7 @@ func loadAuthSessionForRecord(config *Config) (string, bool) {
 	tmp.Close()
 
 	ui.PrintStep("Sesión del proyecto cargada — grabas ya autenticado (sin login)")
+	ui.PrintHint("¿Este flow ES el login? Córtalo (Ctrl+C) y vuelve a correr con --fresh para grabar con navegador limpio.")
 	return tmp.Name(), true
 }
 
