@@ -131,9 +131,14 @@ Para cada feature nueva o fix:
 - **NO** reescribir/mover un tag de versión ya publicado (`git tag -f` + `push --force`). Los tags de Go son **inmutables en el proxy**: `proxy.golang.org` y `sum.golang.org` fijan el contenido de cada versión para siempre, así que `go install ...@vX.Y.Z` seguirá trayendo el commit original por más que muevas el tag en GitHub. Para publicar un fix **siempre bumpear** a una versión nueva (`v1.1.4`, `v1.1.5`, …), nunca reciclar la anterior. (Pasó: mover `v1.1.3` no llegó nunca a la máquina del usuario; tuvimos que sacar `v1.1.4`.)
 
 ### Releasear una versión nueva
+La distribución es por **binarios precompilados** (GoReleaser + GitHub Actions). El usuario final NO necesita Go; `install.sh`/`install.ps1` y `oraculo update` bajan el binario del GitHub Release.
 1. Commit + `push origin main`.
 2. `git tag -a vX.Y.Z -m "..."` + `git push origin vX.Y.Z` (tag nuevo, jamás `-f`).
-3. Instalar exacto para evitar el lag del endpoint `@latest` del proxy: `ORACULO_VERSION=vX.Y.Z bash -c "$(curl -sSL .../install.sh)"` (install.sh respeta `ORACULO_VERSION`).
+3. El push del tag dispara `.github/workflows/release.yml` → GoReleaser compila la matriz (linux/darwin/windows × amd64/arm64) y publica el GitHub Release con los binarios + `checksums.txt`.
+4. Verifica que el release tenga los assets `oraculo_<os>_<arch>` (y `oraculo_windows_<arch>.exe`) antes de avisar a nadie. Probar local sin publicar: `goreleaser release --snapshot --clean`.
+5. La versión la inyecta ldflags en `cmd.version`, así que `oraculo --version` reporta el tag exacto.
+
+> Si cambias el nombre de los assets, actualiza los **tres** consumidores a la vez: `.goreleaser.yaml` (`archives.name_template`), `install.sh`/`install.ps1` y `releaseAssetName()` en `cmd/update.go`.
 
 ---
 

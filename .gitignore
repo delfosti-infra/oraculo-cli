@@ -39,3 +39,6 @@ test-results
 .env
 .env.*
 oraculo.config.json
+
+# GoReleaser
+dist/

@@ -29,9 +29,12 @@ func init() {
 	rootCmd.SetVersionTemplate("oraculo {{.Version}}\n")
 }
 
-// resolveVersion devuelve la versión del módulo embebida por `go install`
-// (ej. "v1.0.4"). Para builds locales (`go build`/`go run`) devuelve "dev".
+var version string
+
 func resolveVersion() string {
+	if version != "" {
+		return version
+	}
 	if info, ok := debug.ReadBuildInfo(); ok {
 		if v := info.Main.Version; v != "" && v != "(devel)" {
 			return v

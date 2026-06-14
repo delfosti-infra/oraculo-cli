@@ -3,9 +3,9 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	updateModulePath = "github.com/delfosti-infra/oraculo-cli"
-	updateTagsAPIURL = "https://api.github.com/repos/delfosti-infra/oraculo-cli/tags?per_page=100"
+	updateLatestAPIURL   = "https://api.github.com/repos/delfosti-infra/oraculo-cli/releases/latest"
+	updateReleaseBaseURL = "https://github.com/delfosti-infra/oraculo-cli/releases/download"
 )
 
 var updateCmd = &cobra.Command{
@@ -38,7 +38,7 @@ func runUpdate(current string) error {
 	ui.PrintHeader(
 		"UPDATE",
 		"Actualiza la CLI de Oráculo",
-		"Busca la última versión publicada y la instala con la versión exacta.",
+		"Descarga el binario de la última versión publicada y reemplaza el actual.",
 	)
 
 	ui.PrintStep("Buscando la última versión publicada…")
@@ -58,29 +58,95 @@ func runUpdate(current string) error {
 		ui.PrintStep(fmt.Sprintf("Nueva versión disponible: %s → %s", current, latest))
 	}
 
-	if _, ok := commandVersion("go", "version"); !ok {
-		ui.PrintError("Necesitas Go para actualizar (la CLI se instala con go install).")
-		ui.PrintHint("Instala Go desde https://go.dev/dl/ o pídele a tu contacto de DelfosTI el binario precompilado.")
-		return ui.ErrAlreadyReported
+	exePath, err := currentExecutablePath()
+	if err != nil {
+		return ui.Fail("No pude resolver la ruta del ejecutable actual: %s", err)
 	}
 
-	if err := goInstallCLI(latest); err != nil {
+	asset := releaseAssetName()
+	url := fmt.Sprintf("%s/%s/%s", updateReleaseBaseURL, latest, asset)
+
+	ui.PrintStep("Descargando " + asset + "…")
+	if err := downloadAndReplace(url, exePath); err != nil {
 		return ui.Fail("No se pudo instalar %s: %s", latest, err)
-	}
-
-	if err := ensureOraculoSymlink(); err != nil {
-		ui.PrintWarning("Se instaló, pero no pude actualizar el comando 'oraculo': " + err.Error())
 	}
 
 	ui.PrintSuccess(fmt.Sprintf("Actualizado a %s. Verifica con: oraculo --version", latest))
 	return nil
 }
 
-// fetchLatestCLIVersion devuelve el tag de versión más alto publicado en GitHub.
-// Va directo a GitHub (no al proxy de Go) para esquivar el lag del endpoint @latest.
+func currentExecutablePath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		return resolved, nil
+	}
+	return exe, nil
+}
+
+func releaseAssetName() string {
+	name := fmt.Sprintf("oraculo_%s_%s", runtime.GOOS, runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return name
+}
+
+func downloadAndReplace(url, exePath string) error {
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("descarga falló (HTTP %d) en %s", resp.StatusCode, url)
+	}
+
+	dir := filepath.Dir(exePath)
+	tmp, err := os.CreateTemp(dir, ".oraculo-update-*")
+	if err != nil {
+		return fmt.Errorf("no pude crear archivo temporal en %s: %w", dir, err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := io.Copy(tmp, resp.Body); err != nil {
+		tmp.Close()
+		return fmt.Errorf("no pude escribir la descarga: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0o755); err != nil {
+		return err
+	}
+
+	if runtime.GOOS == "windows" {
+		old := exePath + ".old"
+		_ = os.Remove(old)
+		if err := os.Rename(exePath, old); err != nil {
+			return fmt.Errorf("no pude apartar el binario actual: %w", err)
+		}
+		if err := os.Rename(tmpPath, exePath); err != nil {
+			_ = os.Rename(old, exePath)
+			return fmt.Errorf("no pude colocar el binario nuevo: %w", err)
+		}
+		_ = os.Remove(old)
+		return nil
+	}
+
+	if err := os.Rename(tmpPath, exePath); err != nil {
+		return fmt.Errorf("no pude reemplazar el binario: %w", err)
+	}
+	return nil
+}
+
 func fetchLatestCLIVersion() (string, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, updateTagsAPIURL, nil)
+	req, err := http.NewRequest(http.MethodGet, updateLatestAPIURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -96,73 +162,18 @@ func fetchLatestCLIVersion() (string, error) {
 		return "", fmt.Errorf("GitHub respondió %d", resp.StatusCode)
 	}
 
-	var tags []struct {
-		Name string `json:"name"`
+	var release struct {
+		TagName string `json:"tag_name"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return "", fmt.Errorf("respuesta inválida de GitHub: %w", err)
 	}
-
-	best := ""
-	for _, t := range tags {
-		if _, _, _, ok := parseSemver(t.Name); !ok {
-			continue
-		}
-		if best == "" || semverLess(best, t.Name) {
-			best = t.Name
-		}
+	if release.TagName == "" {
+		return "", fmt.Errorf("no encontré un release publicado")
 	}
-	if best == "" {
-		return "", fmt.Errorf("no encontré tags de versión")
-	}
-	return best, nil
+	return release.TagName, nil
 }
 
-// goInstallCLI corre `go install module@version` heredando stdout/stderr.
-func goInstallCLI(version string) error {
-	cmd := exec.Command("go", "install", updateModulePath+"@"+version)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-// ensureOraculoSymlink deja el comando `oraculo` apuntando al binario recién
-// instalado (`oraculo-cli`). En Windows copia el .exe; en el resto, symlink.
-func ensureOraculoSymlink() error {
-	gobin := goBinDir()
-	if gobin == "" {
-		return fmt.Errorf("no pude resolver el directorio de binarios de Go")
-	}
-	src := filepath.Join(gobin, "oraculo-cli")
-	dst := filepath.Join(gobin, "oraculo")
-	if runtime.GOOS == "windows" {
-		src += ".exe"
-		dst += ".exe"
-		data, err := os.ReadFile(src)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(dst, data, 0o755)
-	}
-	_ = os.Remove(dst)
-	return os.Symlink(src, dst)
-}
-
-func goBinDir() string {
-	if out, err := exec.Command("go", "env", "GOBIN").Output(); err == nil {
-		if dir := strings.TrimSpace(string(out)); dir != "" {
-			return dir
-		}
-	}
-	if out, err := exec.Command("go", "env", "GOPATH").Output(); err == nil {
-		if dir := strings.TrimSpace(string(out)); dir != "" {
-			return filepath.Join(dir, "bin")
-		}
-	}
-	return ""
-}
-
-// parseSemver descompone "vX.Y.Z" (ignora pre-release). ok=false si no matchea.
 func parseSemver(v string) (int, int, int, bool) {
 	core := strings.TrimPrefix(v, "v")
 	if i := strings.IndexByte(core, '-'); i >= 0 {
@@ -181,7 +192,6 @@ func parseSemver(v string) (int, int, int, bool) {
 	return major, minor, patch, true
 }
 
-// semverLess reporta si a < b. Versiones no parseables se tratan como no-menores.
 func semverLess(a, b string) bool {
 	aMaj, aMin, aPat, aOK := parseSemver(a)
 	bMaj, bMin, bPat, bOK := parseSemver(b)

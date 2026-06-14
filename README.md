@@ -4,13 +4,11 @@ CLI oficial de **Oráculo** (DelfosTI). Graba flujos E2E con Playwright (codegen
 
 ## Requisitos
 
-- **Go 1.21+** — la instalación usa `go install`.
-- **Node.js 18+ y npm** — la CLI usa `npx playwright` por dentro.
-- **Navegadores de Playwright** — instálalos una vez con `npx playwright install`.
+Solo necesitas **Node.js 18+** — la CLI usa `npx playwright` por dentro para grabar y reproducir flows. Los navegadores de Playwright se instalan solos la primera vez que grabas.
+
+> **No necesitas Go.** El instalador baja un binario precompilado para tu sistema.
 
 ## Instalación
-
-El instalador deja el comando `oraculo` listo en tu `PATH` automáticamente (no necesita sudo ni admin).
 
 **macOS / Linux**
 
@@ -24,13 +22,13 @@ curl -sSL https://raw.githubusercontent.com/delfosti-infra/oraculo-cli/main/inst
 irm https://raw.githubusercontent.com/delfosti-infra/oraculo-cli/main/install.ps1 | iex
 ```
 
-Verifica que quedó disponible:
+El instalador deja el comando `oraculo` en tu `PATH` (sin sudo ni admin). Verifica:
 
 ```bash
 oraculo --version
 ```
 
-> ¿Prefieres instalarlo a mano? `go install github.com/delfosti-infra/oraculo-cli@latest` deja el binario como `oraculo-cli` en `$(go env GOPATH)/bin`; tendrás que renombrarlo a `oraculo` y agregar ese directorio a tu `PATH` tú mismo. El instalador de arriba hace ambas cosas por ti.
+Para actualizar más adelante: `oraculo update`.
 
 ## Uso
 
@@ -42,4 +40,24 @@ oraculo record checkout --HU=KDP0-6  # graba un flow con Playwright codegen
 oraculo push                         # súbelo al backoffice
 ```
 
-Corre `oraculo --help` para ver todos los comandos.
+¿Algo no anda? `oraculo doctor` revisa tu entorno (Node, navegadores de Playwright, conexión al backend, sesión y proyecto vinculado). Corre `oraculo --help` para ver todos los comandos.
+
+## Recetas
+
+**Instalar una versión específica**
+
+```bash
+ORACULO_VERSION=v1.2.3 bash -c "$(curl -sSL https://raw.githubusercontent.com/delfosti-infra/oraculo-cli/main/install.sh)"
+```
+
+**Cambiar la carpeta de instalación** (por defecto `~/.local/bin`, en Windows `%LOCALAPPDATA%\Programs\Oraculo`)
+
+```bash
+ORACULO_INSTALL_DIR="$HOME/bin" bash -c "$(curl -sSL https://raw.githubusercontent.com/delfosti-infra/oraculo-cli/main/install.sh)"
+```
+
+**Compilar desde fuente** (solo desarrollo — requiere Go 1.26+)
+
+```bash
+go build -o oraculo .
+```

@@ -1,65 +1,97 @@
 #!/usr/bin/env bash
-#
-# Instalador de la CLI de Oráculo (DelfosTI).
-#
-#   curl -sSL https://raw.githubusercontent.com/delfosti-infra/oraculo-cli/main/install.sh | bash
-#
-# Hace `go install`, deja el binario disponible como `oraculo` y se asegura de
-# que el directorio de binarios de Go esté en tu PATH. No necesita sudo.
 set -euo pipefail
 
-MODULE="github.com/delfosti-infra/oraculo-cli"
-VERSION="${ORACULO_VERSION:-latest}"
+REPO="delfosti-infra/oraculo-cli"
+INSTALL_DIR="${ORACULO_INSTALL_DIR:-$HOME/.local/bin}"
 
-if ! command -v go >/dev/null 2>&1; then
-  echo "✗ Necesitas Go instalado (https://go.dev/dl/) para instalar la CLI de Oráculo." >&2
-  echo "  ¿No usas Go? Pídele a tu contacto de DelfosTI el binario precompilado." >&2
+need() { command -v "$1" >/dev/null 2>&1; }
+if ! need curl; then
+  echo "✗ Necesito 'curl' para descargar el binario." >&2
   exit 1
 fi
 
-echo "› Instalando la CLI de Oráculo (${MODULE}@${VERSION})…"
-go install "${MODULE}@${VERSION}"
-
-GOBIN="$(go env GOBIN)"
-[ -n "$GOBIN" ] || GOBIN="$(go env GOPATH)/bin"
-# Git Bash/MSYS en Windows: 'go env' devuelve rutas con backslash → normalizar.
-GOBIN="${GOBIN//\\//}"
-
-# En Windows 'go install' genera oraculo-cli.exe; soportamos ambos.
-if [ -f "$GOBIN/oraculo-cli.exe" ]; then
-  SRC="$GOBIN/oraculo-cli.exe"
-  DEST="$GOBIN/oraculo.exe"
-elif [ -f "$GOBIN/oraculo-cli" ]; then
-  SRC="$GOBIN/oraculo-cli"
-  DEST="$GOBIN/oraculo"
-else
-  echo "✗ No encontré el binario 'oraculo-cli' en $GOBIN tras 'go install'." >&2
-  exit 1
-fi
-
-# Unix: symlink. Windows (.exe): copiamos, porque 'ln -s' no es confiable en MSYS.
-case "$DEST" in
-  *.exe) cp -f "$SRC" "$DEST" ;;
-  *)     ln -sf "$SRC" "$DEST" ;;
+os="$(uname -s)"
+case "$os" in
+  Linux)  os="linux" ;;
+  Darwin) os="darwin" ;;
+  *)
+    echo "✗ SO no soportado por este instalador: $os" >&2
+    echo "  En Windows usa install.ps1. Para otros, pide el binario a tu contacto de DelfosTI." >&2
+    exit 1 ;;
 esac
-echo "✓ Binario disponible como 'oraculo' en $GOBIN"
 
-# Asegurar que GOBIN esté en el PATH.
+arch="$(uname -m)"
+case "$arch" in
+  x86_64|amd64)  arch="amd64" ;;
+  arm64|aarch64) arch="arm64" ;;
+  *)
+    echo "✗ Arquitectura no soportada: $arch" >&2
+    exit 1 ;;
+esac
+
+asset="oraculo_${os}_${arch}"
+
+version="${ORACULO_VERSION:-}"
+if [ -z "$version" ]; then
+  echo "› Buscando la última versión…"
+  version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+    | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    | head -n1 \
+    | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/')"
+  if [ -z "$version" ]; then
+    echo "✗ No pude resolver la última versión. Fija una con ORACULO_VERSION=vX.Y.Z" >&2
+    exit 1
+  fi
+fi
+
+url="https://github.com/${REPO}/releases/download/${version}/${asset}"
+
+echo "› Instalando oraculo ${version} (${os}/${arch})…"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+if ! curl -fSL "$url" -o "$tmp/oraculo"; then
+  echo "✗ No pude descargar $url" >&2
+  echo "  ¿Existe un release con binarios para ese tag? Revisa https://github.com/${REPO}/releases" >&2
+  exit 1
+fi
+
+if curl -fsSL "https://github.com/${REPO}/releases/download/${version}/checksums.txt" -o "$tmp/checksums.txt" 2>/dev/null; then
+  sumtool=""
+  if need sha256sum; then sumtool="sha256sum"; elif need shasum; then sumtool="shasum -a 256"; fi
+  if [ -n "$sumtool" ]; then
+    expected="$(grep " ${asset}$" "$tmp/checksums.txt" | awk '{print $1}' | head -n1)"
+    if [ -n "$expected" ]; then
+      actual="$($sumtool "$tmp/oraculo" | awk '{print $1}')"
+      if [ "$expected" != "$actual" ]; then
+        echo "✗ Checksum no coincide para $asset. Abortando por seguridad." >&2
+        exit 1
+      fi
+      echo "✓ Checksum verificado"
+    fi
+  fi
+fi
+
+mkdir -p "$INSTALL_DIR"
+chmod +x "$tmp/oraculo"
+mv -f "$tmp/oraculo" "$INSTALL_DIR/oraculo"
+echo "✓ Binario instalado en $INSTALL_DIR/oraculo"
+
 case ":${PATH:-}:" in
-  *":$GOBIN:"*)
-    echo "✓ $GOBIN ya está en tu PATH"
+  *":$INSTALL_DIR:"*)
+    echo "✓ $INSTALL_DIR ya está en tu PATH"
     ;;
   *)
     case "${SHELL:-}" in
-      */zsh)  RC="$HOME/.zshrc" ;;
-      */bash) RC="$HOME/.bashrc" ;;
-      *)      RC="$HOME/.profile" ;;
+      */zsh)  rc="$HOME/.zshrc" ;;
+      */bash) rc="$HOME/.bashrc" ;;
+      *)      rc="$HOME/.profile" ;;
     esac
-    if ! grep -qsF "$GOBIN" "$RC"; then
-      printf '\n# Añadido por el instalador de Oráculo\nexport PATH="$PATH:%s"\n' "$GOBIN" >> "$RC"
-      echo "✓ Agregué $GOBIN a tu PATH en $RC"
+    if ! grep -qsF "$INSTALL_DIR" "$rc" 2>/dev/null; then
+      printf '\nexport PATH="$PATH:%s"\n' "$INSTALL_DIR" >> "$rc"
+      echo "✓ Agregué $INSTALL_DIR a tu PATH en $rc"
     fi
-    echo "→ Reinicia la terminal (o corre: source $RC) para que 'oraculo' quede disponible."
+    echo "→ Reinicia la terminal (o corre: source $rc) para que 'oraculo' quede disponible."
     ;;
 esac
 

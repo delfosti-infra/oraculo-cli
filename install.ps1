@@ -1,41 +1,67 @@
-# Instalador de la CLI de Oraculo (DelfosTI) para Windows.
-#
-#   irm https://raw.githubusercontent.com/delfosti-infra/oraculo-cli/main/install.ps1 | iex
-#
-# Hace `go install`, deja el binario disponible como `oraculo` y agrega el
-# directorio de binarios de Go al PATH del usuario. No necesita admin.
 $ErrorActionPreference = "Stop"
 
-$module = "github.com/delfosti-infra/oraculo-cli"
-$version = if ($env:ORACULO_VERSION) { $env:ORACULO_VERSION } else { "latest" }
+$repo = "delfosti-infra/oraculo-cli"
+$installDir = if ($env:ORACULO_INSTALL_DIR) { $env:ORACULO_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Programs\Oraculo" }
 
-if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
-    Write-Error "Necesitas Go instalado (https://go.dev/dl/) para instalar la CLI de Oraculo. Si no usas Go, pide el binario precompilado a tu contacto de DelfosTI."
+$arch = switch ($env:PROCESSOR_ARCHITECTURE) {
+    "AMD64" { "amd64" }
+    "ARM64" { "arm64" }
+    default { Write-Error "Arquitectura no soportada: $env:PROCESSOR_ARCHITECTURE"; exit 1 }
+}
+$asset = "oraculo_windows_$arch.exe"
+
+$version = $env:ORACULO_VERSION
+if (-not $version) {
+    Write-Host "> Buscando la ultima version..."
+    $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers @{ "Accept" = "application/vnd.github+json" }
+    $version = $rel.tag_name
+    if (-not $version) {
+        Write-Error "No pude resolver la ultima version. Fija una con `$env:ORACULO_VERSION = 'vX.Y.Z'"
+        exit 1
+    }
+}
+
+$url = "https://github.com/$repo/releases/download/$version/$asset"
+
+Write-Host "> Instalando oraculo $version (windows/$arch)..."
+New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("oraculo-" + [System.Guid]::NewGuid().ToString() + ".exe")
+
+try {
+    Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
+} catch {
+    Write-Error "No pude descargar $url . Revisa https://github.com/$repo/releases"
     exit 1
 }
 
-Write-Host "> Instalando la CLI de Oraculo ($module@$version)..."
-go install "$module@$version"
+try {
+    $sumsTmp = Join-Path ([System.IO.Path]::GetTempPath()) ("oraculo-sums-" + [System.Guid]::NewGuid().ToString() + ".txt")
+    Invoke-WebRequest -Uri "https://github.com/$repo/releases/download/$version/checksums.txt" -OutFile $sumsTmp -UseBasicParsing
+    $line = (Get-Content $sumsTmp | Where-Object { $_ -match ([regex]::Escape($asset) + '\s*$') } | Select-Object -First 1)
+    if ($line) {
+        $expected = ($line -split '\s+')[0]
+        $actual = (Get-FileHash -Algorithm SHA256 -Path $tmp).Hash.ToLower()
+        if ($expected.ToLower() -ne $actual) {
+            Remove-Item $tmp -ErrorAction SilentlyContinue
+            Write-Error "Checksum no coincide para $asset. Abortando por seguridad."
+            exit 1
+        }
+        Write-Host "OK Checksum verificado"
+    }
+    Remove-Item $sumsTmp -ErrorAction SilentlyContinue
+} catch { }
 
-$gobin = (& go env GOBIN)
-if ([string]::IsNullOrEmpty($gobin)) { $gobin = Join-Path (& go env GOPATH) "bin" }
-
-$src = Join-Path $gobin "oraculo-cli.exe"
-if (-not (Test-Path $src)) {
-    Write-Error "No encontre el binario en $src tras 'go install'."
-    exit 1
-}
-
-Copy-Item $src (Join-Path $gobin "oraculo.exe") -Force
-Write-Host "OK Binario disponible como 'oraculo' en $gobin"
+$dest = Join-Path $installDir "oraculo.exe"
+Move-Item -Force $tmp $dest
+Write-Host "OK Binario instalado en $dest"
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($userPath -notlike "*$gobin*") {
-    $newPath = if ([string]::IsNullOrEmpty($userPath)) { $gobin } else { "$userPath;$gobin" }
+if ($userPath -notlike "*$installDir*") {
+    $newPath = if ([string]::IsNullOrEmpty($userPath)) { $installDir } else { "$userPath;$installDir" }
     [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-    Write-Host "OK Agregue $gobin a tu PATH de usuario. Reinicia la terminal."
+    Write-Host "OK Agregue $installDir a tu PATH de usuario. Reinicia la terminal."
 } else {
-    Write-Host "OK $gobin ya esta en tu PATH"
+    Write-Host "OK $installDir ya esta en tu PATH"
 }
 
 Write-Host ""
