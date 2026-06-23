@@ -169,6 +169,9 @@ func pushFlow(client *http.Client, config *Config, token, e2eDir, slug string) (
 	if meta.UsesAuthSession {
 		_ = writer.WriteField("usesAuthSession", "true")
 	}
+	if meta.Platform != "" {
+		_ = writer.WriteField("platform", meta.Platform)
+	}
 
 	for _, sp := range screenshots {
 		file, err := os.Open(sp)

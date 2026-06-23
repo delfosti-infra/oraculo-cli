@@ -22,6 +22,7 @@ const stepFailMarker = "__ORACULO_STEP_FAIL__"
 
 var recordHUFlag []string
 var recordFreshFlag bool
+var recordPlatformFlag string
 
 var recordCmd = &cobra.Command{
 	Use:   "record <nombre>",
@@ -232,8 +233,20 @@ var recordCmd = &cobra.Command{
 			fmt.Println(string(testOutput))
 		}
 
-		if len(huKeys) > 0 || usesAuthSession {
-			meta := flowMeta{JiraIssueKeys: huKeys, UsesAuthSession: usesAuthSession}
+		platform := normalizePlatform(recordPlatformFlag)
+		if recordPlatformFlag != "" && platform == "" {
+			ui.PrintWarning(fmt.Sprintf(
+				"Plataforma inválida '%s' (usá web, ios o android). Se ignora.",
+				recordPlatformFlag,
+			))
+		}
+
+		if len(huKeys) > 0 || usesAuthSession || platform != "" {
+			meta := flowMeta{
+				JiraIssueKeys:   huKeys,
+				UsesAuthSession: usesAuthSession,
+				Platform:        platform,
+			}
 			if err := saveFlowMeta(e2eDir, slug, meta); err != nil {
 				ui.PrintWarning(fmt.Sprintf("No se pudo guardar el meta del flow: %s", err))
 			}
@@ -616,6 +629,19 @@ func moveFile(src, dst string) error {
 	return nil
 }
 
+func normalizePlatform(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "web":
+		return "WEB"
+	case "ios":
+		return "IOS"
+	case "android":
+		return "ANDROID"
+	default:
+		return ""
+	}
+}
+
 func init() {
 	recordCmd.Flags().StringSliceVar(
 		&recordHUFlag,
@@ -628,6 +654,12 @@ func init() {
 		"fresh",
 		false,
 		"Graba sin la sesión guardada del proyecto (navegador limpio). Úsalo para el flow de login.",
+	)
+	recordCmd.Flags().StringVar(
+		&recordPlatformFlag,
+		"platform",
+		"",
+		"Plataforma del flow: web (default), ios o android.",
 	)
 	rootCmd.AddCommand(recordCmd)
 }

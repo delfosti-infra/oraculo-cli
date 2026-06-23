@@ -146,3 +146,25 @@ func TestParseFailedSteps_IgnoresSourceEcho(t *testing.T) {
 		t.Errorf("paso fallido mal parseado: %q", failed[0])
 	}
 }
+
+func TestNormalizePlatform(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"web", "WEB"},
+		{"WEB", "WEB"},
+		{"ios", "IOS"},
+		{"iOS", "IOS"},
+		{"android", "ANDROID"},
+		{"  Android  ", "ANDROID"},
+		{"", ""},
+		{"windows", ""},
+		{"flutter", ""},
+	}
+	for _, c := range cases {
+		if got := normalizePlatform(c.in); got != c.want {
+			t.Errorf("normalizePlatform(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
