@@ -124,16 +124,25 @@ func discoverFlows(e2eDir string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("no se pudo leer %s/: %w", e2eDir, err)
 	}
+	seen := map[string]bool{}
 	var slugs []string
+	add := func(slug string) {
+		if !seen[slug] {
+			seen[slug] = true
+			slugs = append(slugs, slug)
+		}
+	}
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".spec.ts") {
+		if e.IsDir() || strings.Contains(name, ".oraculo.") {
 			continue
 		}
-		if strings.Contains(name, ".oraculo.") {
-			continue
+		switch {
+		case strings.HasSuffix(name, ".spec.ts"):
+			add(strings.TrimSuffix(name, ".spec.ts"))
+		case strings.HasSuffix(name, ".mobile.json"):
+			add(strings.TrimSuffix(name, ".mobile.json"))
 		}
-		slugs = append(slugs, strings.TrimSuffix(name, ".spec.ts"))
 	}
 	sort.Strings(slugs)
 	return slugs, nil
@@ -141,6 +150,10 @@ func discoverFlows(e2eDir string) ([]string, error) {
 
 func pushFlow(client *http.Client, config *Config, token, e2eDir, slug string) (string, string, error) {
 	specPath := filepath.Join(e2eDir, slug+".spec.ts")
+	mobilePath := filepath.Join(e2eDir, slug+".mobile.json")
+	if _, statErr := os.Stat(mobilePath); statErr == nil {
+		specPath = mobilePath
+	}
 	specContent, err := os.ReadFile(specPath)
 	if err != nil {
 		return "", "", fmt.Errorf("no se pudo leer %s: %w", specPath, err)

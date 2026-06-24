@@ -23,6 +23,8 @@ const stepFailMarker = "__ORACULO_STEP_FAIL__"
 var recordHUFlag []string
 var recordFreshFlag bool
 var recordPlatformFlag string
+var recordAppFlag string
+var recordAppActivityFlag string
 
 var recordCmd = &cobra.Command{
 	Use:   "record <nombre>",
@@ -68,6 +70,10 @@ var recordCmd = &cobra.Command{
 		}
 		if err := os.MkdirAll(e2eDir, 0755); err != nil {
 			return ui.Fail("No se pudo crear %s/: %s", e2eDir, err)
+		}
+
+		if mp := normalizePlatform(recordPlatformFlag); mp == "IOS" || mp == "ANDROID" {
+			return recordMobile(e2eDir, slug, mp)
 		}
 
 		specPath := filepath.Join(e2eDir, slug+".spec.ts")
@@ -262,6 +268,67 @@ func removeFlowArtifacts(e2eDir, slug string) {
 	_ = os.Remove(filepath.Join(e2eDir, slug+".trace.zip"))
 	_ = os.RemoveAll(filepath.Join(e2eDir, ".oraculo", slug))
 	_ = os.Remove(metaPath(e2eDir, slug))
+}
+
+func recorderCommand() []string {
+	if custom := strings.TrimSpace(os.Getenv("ORACULO_RECORDER_CMD")); custom != "" {
+		return strings.Fields(custom)
+	}
+	return []string{"npx", "--yes", "oraculo-mobile-recorder@latest"}
+}
+
+func recordMobile(e2eDir, slug, platform string) error {
+	app := strings.TrimSpace(recordAppFlag)
+	if app == "" {
+		return ui.Fail("Para grabar un flow móvil necesitás --app (appPackage/bundleId o ruta al .apk/.ipa).")
+	}
+
+	outPath := filepath.Join(e2eDir, slug+".mobile.json")
+	if _, err := os.Stat(outPath); err == nil {
+		ui.PrintWarning(fmt.Sprintf("Ya existe un flow móvil `%s`.", slug))
+		if !askYesNo("¿Lo regrabás y reemplazás el actual? [s/N]", false) {
+			ui.PrintHint("Sin cambios. Graba con otro nombre o confirma para reemplazar.")
+			return nil
+		}
+	}
+
+	recorder := recorderCommand()
+	args := append([]string{}, recorder[1:]...)
+	args = append(args,
+		"--platform", strings.ToLower(platform),
+		"--app", app,
+		"--out", outPath,
+	)
+	if recordAppActivityFlag != "" {
+		args = append(args, "--app-activity", recordAppActivityFlag)
+	}
+	if device := os.Getenv("APPIUM_DEVICE_NAME"); device != "" {
+		args = append(args, "--device", device)
+	}
+	if appium := os.Getenv("APPIUM_URL"); appium != "" {
+		args = append(args, "--appium", appium)
+	}
+
+	ui.PrintStep("Abriendo el grabador móvil — tocá elementos en la pantalla del device para armar el flow")
+	rec := exec.Command(recorder[0], args...)
+	rec.Stdin = os.Stdin
+	rec.Stdout = os.Stdout
+	rec.Stderr = os.Stderr
+	if err := rec.Run(); err != nil {
+		ui.PrintHint("¿El grabador no está instalado? Definí ORACULO_RECORDER_CMD apuntando al recorder del worker.")
+		return ui.Fail("El grabador móvil terminó con error: %s", err)
+	}
+	if _, err := os.Stat(outPath); err != nil {
+		return ui.Fail("El grabador no generó el spec móvil (¿cerraste sin guardar?).")
+	}
+
+	meta := flowMeta{JiraIssueKeys: resolveHUsForRecord(recordHUFlag), Platform: platform}
+	if err := saveFlowMeta(e2eDir, slug, meta); err != nil {
+		ui.PrintWarning(fmt.Sprintf("No se pudo guardar el meta del flow: %s", err))
+	}
+
+	ui.PrintSuccess(fmt.Sprintf("Flow móvil `%s` listo. Súbelo al backoffice con: oraculo push", slug))
+	return nil
 }
 
 func instrumentSpec(content, screenshotsDir string) (string, int) {
@@ -660,6 +727,18 @@ func init() {
 		"platform",
 		"",
 		"Plataforma del flow: web (default), ios o android.",
+	)
+	recordCmd.Flags().StringVar(
+		&recordAppFlag,
+		"app",
+		"",
+		"(móvil) appPackage/bundleId o ruta al .apk/.ipa a grabar.",
+	)
+	recordCmd.Flags().StringVar(
+		&recordAppActivityFlag,
+		"app-activity",
+		"",
+		"(móvil, Android) activity de arranque, si la app la requiere.",
 	)
 	rootCmd.AddCommand(recordCmd)
 }
