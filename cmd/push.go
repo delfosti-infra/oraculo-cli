@@ -175,7 +175,7 @@ func pushFlow(client *http.Client, config *types.Config, token, e2eDir, slug str
 
 	meta := loadFlowMeta(e2eDir, slug)
 	for _, key := range meta.JiraIssueKeys {
-		_ = writer.WriteField("jiraIssueKeys", key)
+		_ = writer.WriteField("boardIssueKeys", key)
 	}
 	if meta.UsesAuthSession {
 		_ = writer.WriteField("usesAuthSession", "true")
