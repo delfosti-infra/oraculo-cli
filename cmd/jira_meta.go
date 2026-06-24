@@ -37,13 +37,16 @@ func loadFlowMeta(e2eDir, slug string) flowMeta {
 func saveFlowMeta(e2eDir, slug string, m flowMeta) error {
 	path := metaPath(e2eDir, slug)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
+		return fmt.Errorf("crear directorio de meta '%s': %w", filepath.Dir(path), err)
 	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("serializar meta del flow '%s': %w", slug, err)
 	}
-	return os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("escribir meta del flow '%s': %w", path, err)
+	}
+	return nil
 }
 
 var jiraIssueKeyRegex = regexp.MustCompile(`[A-Z][A-Z0-9_]*-\d+`)
