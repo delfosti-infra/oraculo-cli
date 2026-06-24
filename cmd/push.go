@@ -148,7 +148,7 @@ func discoverFlows(e2eDir string) ([]string, error) {
 	return slugs, nil
 }
 
-func pushFlow(client *http.Client, config *Config, token, e2eDir, slug string) (string, string, error) {
+func pushFlow(client *http.Client, config *types.Config, token, e2eDir, slug string) (string, string, error) {
 	specPath := filepath.Join(e2eDir, slug+".spec.ts")
 	mobilePath := filepath.Join(e2eDir, slug+".mobile.json")
 	if _, statErr := os.Stat(mobilePath); statErr == nil {
@@ -173,12 +173,10 @@ func pushFlow(client *http.Client, config *Config, token, e2eDir, slug string) (
 	_ = writer.WriteField("specContent", string(specContent))
 	_ = writer.WriteField("specPath", specPath)
 
-	// HUs guardadas en el sidecar al hacer `oraculo record --HU=...` o vía auto-detect.
 	meta := loadFlowMeta(e2eDir, slug)
 	for _, key := range meta.JiraIssueKeys {
 		_ = writer.WriteField("jiraIssueKeys", key)
 	}
-	// El flow se grabó con la sesión del proyecto → el worker debe inyectarla al replayar.
 	if meta.UsesAuthSession {
 		_ = writer.WriteField("usesAuthSession", "true")
 	}

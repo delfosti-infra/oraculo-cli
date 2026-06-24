@@ -9,9 +9,6 @@ func (m model) View() string {
 	if m.quitting {
 		return ""
 	}
-	// Frame mínimo mientras el subcomando tiene la terminal: el flush previo a
-	// ceder borra el prompt/footer y no quedan frames duplicados en el scrollback.
-	// El resultado se registra como línea persistente (tea.Println) al terminar.
 	if m.executing {
 		return "\n"
 	}

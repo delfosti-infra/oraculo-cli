@@ -82,7 +82,7 @@ func runAuthCapture() error {
 	}
 	tmpPath := tmp.Name()
 	tmp.Close()
-	defer os.Remove(tmpPath) // el storageState es el secreto: bórralo siempre
+	defer os.Remove(tmpPath)
 
 	ui.PrintStep(fmt.Sprintf("Abriendo browser contra %s — inicia sesión y ciérralo", config.BaseURL))
 
@@ -98,7 +98,6 @@ func runAuthCapture() error {
 
 	openStderr, openErr := runOpen()
 	if openErr != nil && playwrightBrowsersMissing(openStderr) {
-		// Falta chromium (máquina nueva): lo instalamos y reintentamos.
 		ui.PrintStep("Faltan los navegadores de Playwright — descargando chromium (una sola vez)…")
 		if installErr := installPlaywrightBrowsers(); installErr != nil {
 			printPlaywrightInstallHint("oraculo auth")

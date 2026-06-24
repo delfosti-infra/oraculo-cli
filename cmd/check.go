@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/delfosti-infra/oraculo-cli/internal/api/types"
 	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -21,7 +22,7 @@ var checkCmd = &cobra.Command{
 			"Revisa la configuración, estructura y specs antes de publicar.",
 		)
 
-		var config Config
+		var config types.Config
 
 		if _, err := os.Stat("oraculo.config.json"); err != nil {
 			return ui.Fail("No se encontró oraculo.config.json. Ejecuta 'oraculo init' primero.")

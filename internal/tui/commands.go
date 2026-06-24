@@ -58,8 +58,6 @@ type commandFinishedMsg struct {
 	err  error
 }
 
-// Re-invoca el propio binario cediendo la terminal, para que comandos
-// interactivos (record/login) funcionen sin cambios dentro del TUI.
 func runCommand(name string, args []string) tea.Cmd {
 	full := append([]string{name}, args...)
 	proc := exec.Command(os.Args[0], full...)

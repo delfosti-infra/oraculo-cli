@@ -74,12 +74,6 @@ func validateJiraIssueKeys(raw []string) ([]string, []string) {
 	return valid, invalid
 }
 
-// detectHUsFromGitBranch ejecuta `git rev-parse --abbrev-ref HEAD` y extrae
-// todas las HU keys que matcheen el patrón "ABC-123" en el nombre de la branch.
-//
-// Soporta patrones comunes:
-//
-// Si la branch no tiene ningún match o git no está disponible, devuelve nil.
 func detectHUsFromGitBranch() (branch string, keys []string) {
 	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {
@@ -112,8 +106,6 @@ var (
 			Bold(true)
 )
 
-// promptForHUsFromBranch muestra los keys detectados y pregunta al usuario
-// si quiere usarlos. Devuelve la lista final (puede ser vacía si el usuario rechaza).
 func promptForHUsFromBranch(branch string, detected []string) []string {
 	if len(detected) == 0 {
 		return nil
@@ -135,7 +127,6 @@ func promptForHUsFromBranch(branch string, detected []string) []string {
 		return nil
 	}
 
-	// Múltiples HUs en la branch
 	fmt.Printf("    %s\n", branchStyle.Render("HUs:"))
 	for i, k := range detected {
 		fmt.Printf("      %s %s\n",
@@ -153,7 +144,6 @@ func promptForHUsFromBranch(branch string, detected []string) []string {
 	case answer == "n" || answer == "no":
 		return nil
 	default:
-		// número o lista de números separados por comas
 		var picked []string
 		for _, idxStr := range strings.Split(answer, ",") {
 			idxStr = strings.TrimSpace(idxStr)
@@ -186,7 +176,6 @@ func readLine(prompt string) string {
 	return line
 }
 
-// printLinkedHUs imprime la confirmación de HUs que quedan asociadas al flow.
 func printLinkedHUs(keys []string) {
 	if len(keys) == 0 {
 		return
@@ -202,11 +191,6 @@ func printLinkedHUs(keys []string) {
 	))
 }
 
-// resolveHUsForRecord decide qué HUs van a quedar asociadas al flow.
-// Prioridad:
-//  1. Si el user pasó --HU explícito → solo esos (validados + dedupeados)
-//  2. Si no, intenta auto-detect desde la branch de git y pregunta confirmación
-//  3. Si no hay nada → devuelve nil (flow sin HU asociada)
 func resolveHUsForRecord(flagValues []string) []string {
 	if len(flagValues) > 0 {
 		valid, invalid := validateJiraIssueKeys(flagValues)

@@ -26,8 +26,6 @@ var loginCmd = &cobra.Command{
 	},
 }
 
-// projectConfigAPIURL devuelve el api_url del oraculo.config.json del directorio
-// actual si existe, o "" cuando aún no se inicializó el proyecto.
 func projectConfigAPIURL() string {
 	if c, err := loadOraculoConfig(); err == nil {
 		return c.APIURL

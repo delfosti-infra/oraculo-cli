@@ -12,12 +12,12 @@ import (
 	"strings"
 
 	"github.com/delfosti-infra/oraculo-cli/internal/api"
+	"github.com/delfosti-infra/oraculo-cli/internal/api/types"
 	appconfig "github.com/delfosti-infra/oraculo-cli/internal/config"
 	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-// stepFailMarker prefija cada acción instrumentada que falló en el replay.
 const stepFailMarker = "__ORACULO_STEP_FAIL__"
 
 var recordHUFlag []string
@@ -130,7 +130,6 @@ var recordCmd = &cobra.Command{
 
 		codegenStderr, codegenErr := runCodegen()
 		if codegenErr != nil && playwrightBrowsersMissing(codegenStderr) {
-			// Falta chromium (máquina nueva): lo instalamos y reintentamos.
 			ui.PrintStep("Faltan los navegadores de Playwright — descargando chromium (una sola vez)…")
 			if installErr := installPlaywrightBrowsers(); installErr != nil {
 				printPlaywrightInstallHint("oraculo record")
@@ -356,10 +355,6 @@ func instrumentSpec(content, screenshotsDir string) (string, int) {
 			)
 		}
 
-		// try/catch multilínea: si la acción falla, registra el error y sigue, para
-		// capturar el screenshot de cada paso. Si el fallo es strict-mode violation
-		// (codegen grabó un selector que en el replay matchea varios), reintenta acotado
-		// a .first() —la misma desambiguación que codegen usa— antes de darlo por fallido.
 		output = append(output, indent+"try {", indent+"  "+trimmed)
 		if retry := retryFirstExpr(trimmed); retry != "" {
 			output = append(output,
@@ -395,16 +390,10 @@ func instrumentSpec(content, screenshotsDir string) (string, int) {
 	return strings.Join(output, "\n"), stepCounter
 }
 
-// isWrappableAction envuelve TODA acción `await …;` (no solo click/fill: también
-// dblclick, locator().click(), .nth(), .filter()). El prefijo `await ` excluye las
-// declaraciones `const x = await …` (p.ej. el patrón de download), que van a nivel de función.
 func isWrappableAction(trimmed string) bool {
 	return strings.HasSuffix(trimmed, ";") && strings.HasPrefix(trimmed, "await ")
 }
 
-// retryFirstExpr arma la misma acción acotada a .first(), para reintentarla cuando el
-// selector grabado matchea varios elementos (strict-mode). Devuelve "" si la acción no es
-// un click/fill/etc. de una sola línea o si ya está desambiguada (.first/.last/.nth).
 func retryFirstExpr(trimmed string) string {
 	m := recordedActionRegex.FindStringSubmatch(trimmed)
 	if m == nil {
@@ -440,7 +429,6 @@ func countScreenshots(dir string) int {
 	return count
 }
 
-// parseFailedSteps recupera como "Paso N: <error>" los pasos que fallaron en el replay.
 func parseFailedSteps(output string) []string {
 	var failed []string
 	for _, line := range strings.Split(output, "\n") {
@@ -448,7 +436,6 @@ func parseFailedSteps(output string) []string {
 		if idx < 0 {
 			continue
 		}
-		// Descarta el eco del código fuente (stack/snippet), no la salida del console.log.
 		if strings.Contains(line, "console.log(") || strings.Contains(line, "__oraculoErr") {
 			continue
 		}
@@ -461,7 +448,6 @@ func parseFailedSteps(output string) []string {
 	return failed
 }
 
-// playwrightMissingBrowserRegex reconoce el aviso de navegador sin descargar.
 var playwrightMissingBrowserRegex = regexp.MustCompile(
 	`(?i)Executable doesn't exist|playwright install`,
 )
@@ -470,7 +456,6 @@ func playwrightBrowsersMissing(output string) bool {
 	return playwrightMissingBrowserRegex.MatchString(output)
 }
 
-// installPlaywrightBrowsers descarga chromium cuando falta (hereda stdout/stderr).
 func installPlaywrightBrowsers() error {
 	cmd := exec.Command("npx", playwrightNpxArgs("install", "chromium")...)
 	cmd.Stdout = os.Stdout
@@ -484,9 +469,6 @@ func printPlaywrightInstallHint(retryCmd string) {
 	ui.PrintHint("Después vuelve a correr:  " + retryCmd)
 }
 
-// playwrightTestResolvable verifica que el proyecto pueda resolver
-// @playwright/test. El runner generado lo importa y Node lo resuelve subiendo
-// por node_modules desde el cwd, así que lo chequeamos igual antes de grabar.
 func playwrightTestResolvable() bool {
 	cmd := exec.Command("node", "-e", "require.resolve('@playwright/test')")
 	return cmd.Run() == nil
@@ -516,12 +498,12 @@ func playwrightNpxArgs(sub ...string) []string {
 	return append([]string{"--yes", "--package", "@playwright/test", "playwright"}, sub...)
 }
 
-func loadOraculoConfig() (*Config, error) {
+func loadOraculoConfig() (*types.Config, error) {
 	data, err := os.ReadFile("oraculo.config.json")
 	if err != nil {
 		return nil, fmt.Errorf("no se encontró oraculo.config.json. Corre 'oraculo init' primero")
 	}
-	var c Config
+	var c types.Config
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("oraculo.config.json inválido: %w", err)
 	}
@@ -557,14 +539,10 @@ func stripStorageState(spec string) string {
 	return storageStateUseRegex.ReplaceAllString(spec, "\n")
 }
 
-// recordedActionRegex captura el locator y el método de una acción de codegen de una línea.
 var recordedActionRegex = regexp.MustCompile(
 	`^(\s*)(await\s+.+?)\.(fill|click|dblclick|press|selectOption|check|uncheck)\((.*)\);\s*$`,
 )
 
-// cleanRecordedSpec quita el ruido de codegen: colapsa fill() consecutivos sobre el
-// mismo locator (deja el último) y descarta los press('CapsLock'). Sin esto un input
-// "Odoo Inc" se promueve como 4 inputs. Los clicks se respetan (pueden ser intencionales).
 func cleanRecordedSpec(spec string) string {
 	lines := strings.Split(spec, "\n")
 	out := make([]string, 0, len(lines))
@@ -581,7 +559,6 @@ func cleanRecordedSpec(spec string) string {
 				continue
 			}
 
-			// fill consecutivo sobre el mismo locator → reemplaza el anterior.
 			if method == "fill" && lastFillIdx >= 0 && locator == lastFillLocator {
 				out[lastFillIdx] = line
 				continue
@@ -594,7 +571,6 @@ func cleanRecordedSpec(spec string) string {
 			}
 		}
 
-		// Cualquier otra línea corta la racha de fills.
 		lastFillIdx = -1
 		lastFillLocator = ""
 		out = append(out, line)
@@ -603,10 +579,6 @@ func cleanRecordedSpec(spec string) string {
 	return strings.Join(out, "\n")
 }
 
-// El timeout global del replay escala con los pasos instrumentados: cada paso
-// cuesta ~1-1.5s (acción + pausa de 400ms + screenshot, más networkidle al
-// navegar), así que 60s fijos cortaban flujos largos aunque anduvieran bien.
-// El freno por paso colgado sigue siendo actionTimeout (10s).
 const (
 	replayBaseTimeoutMs    = 60_000
 	replayPerStepTimeoutMs = 4_000
@@ -638,9 +610,7 @@ export default defineConfig({
 `, specDir, specName, timeoutMs, storageLine)
 }
 
-// loadAuthSessionForRecord baja el storageState del proyecto a un temp para grabar ya
-// autenticado. Devuelve ("", false) y avisa si no hay sesión: se graba sin login (best-effort).
-func loadAuthSessionForRecord(config *Config) (string, bool) {
+func loadAuthSessionForRecord(config *types.Config) (string, bool) {
 	if config.RefId == "" || config.APIURL == "" {
 		ui.PrintWarning("Sin `refId`/`api_url` en config — grabando sin sesión. Usa --fresh para silenciar.")
 		return "", false

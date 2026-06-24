@@ -22,9 +22,6 @@ var doctorCmd = &cobra.Command{
 	},
 }
 
-// runDoctor corre los chequeos de pre-vuelo en orden y termina con exit 1 si
-// algún requisito duro (Node, navegadores, conexión) falla, para que sea usable
-// en CI. La sesión y el proyecto vinculado son pasos siguientes, no fallos.
 func runDoctor() error {
 	ui.PrintHeader(
 		"DOCTOR",
@@ -91,7 +88,6 @@ func runDoctor() error {
 	return nil
 }
 
-// checkSession devuelve true si hay una sesión válida; false si falta o venció.
 func checkSession(client *api.Client) bool {
 	token, err := appconfig.LoadToken()
 	if err != nil {
@@ -108,7 +104,6 @@ func checkSession(client *api.Client) bool {
 	return true
 }
 
-// checkProjectLinked devuelve true si el directorio tiene un proyecto vinculado.
 func checkProjectLinked() bool {
 	config, err := loadOraculoConfig()
 	if err != nil || config.RefId == "" {
@@ -128,8 +123,6 @@ func commandVersion(bin string, args ...string) (string, bool) {
 	return strings.TrimSpace(string(out)), true
 }
 
-// playwrightBrowsersPresent comprueba el cache de navegadores de Playwright
-// (respeta PLAYWRIGHT_BROWSERS_PATH) buscando al menos un build de Chromium.
 func playwrightBrowsersPresent() bool {
 	dir := playwrightBrowsersDir()
 	if dir == "" {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-type ApiResponse[T any] struct {
+type APIResponse[T any] struct {
 	Succeeded bool     `json:"succeeded"`
 	Data      *T       `json:"data"`
 	Message   string   `json:"message"`
@@ -14,7 +14,7 @@ type ApiResponse[T any] struct {
 }
 
 func UnwrapJSON[T any](respBody []byte) (*T, error) {
-	var wrapper ApiResponse[T]
+	var wrapper APIResponse[T]
 	if err := json.Unmarshal(respBody, &wrapper); err != nil {
 		return nil, fmt.Errorf("no se pudo parsear la respuesta: %w", err)
 	}

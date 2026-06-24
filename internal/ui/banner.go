@@ -51,9 +51,6 @@ var (
 
 	separatorStyle = lipgloss.NewStyle().
 			Foreground(colorInkMute)
-
-	dotStyle = lipgloss.NewStyle().
-			Foreground(colorSuccess)
 )
 
 const (
@@ -136,17 +133,4 @@ func renderLogoSweep(lines []string) {
 		fmt.Print(ansiClearLine + ansiLineStart)
 		fmt.Println(logoStyle.Render(string(runes)))
 	}
-}
-
-func PrintCompactBanner() {
-	dot := dotStyle.Render("●")
-	name := lipgloss.NewStyle().
-		Foreground(colorGold).
-		Italic(true).
-		Bold(true).
-		Render("Oráculo")
-	separator := separatorStyle.Render("·")
-	versionText := versionStyle.Render(version)
-
-	fmt.Printf("%s %s %s %s\n\n", dot, name, separator, versionText)
 }

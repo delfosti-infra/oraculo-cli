@@ -15,14 +15,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type Config struct {
-	Project string `json:"project"`
-	RefId   string `json:"refId"`
-	BaseURL string `json:"base_url"`
-	APIURL  string `json:"api_url"`
-	E2EDir  string `json:"e2e_dir"`
-}
-
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Inicializa Oráculo en el proyecto actual",
@@ -38,7 +30,7 @@ var initCmd = &cobra.Command{
 			return ui.Fail("Ya existe oraculo.config.json — el proyecto ya está inicializado.")
 		}
 
-		config := Config{
+		config := types.Config{
 			APIURL: appconfig.ResolveAPIURL("", ""),
 			E2EDir: "e2e",
 		}
