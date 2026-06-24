@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -121,7 +120,7 @@ func promptForHUsFromBranch(branch string, detected []string) []string {
 	if len(detected) == 1 {
 		fmt.Printf("    %s %s\n", branchStyle.Render("HU:    "), keyStyle.Render(detected[0]))
 		fmt.Println()
-		if askYesNo(fmt.Sprintf("Linkear %s a este flow? [Y/n]", keyStyle.Render(detected[0])), true) {
+		if ui.PromptYesNo(fmt.Sprintf("Linkear %s a este flow? [Y/n]", keyStyle.Render(detected[0])), true) {
 			return detected
 		}
 		return nil
@@ -136,7 +135,7 @@ func promptForHUsFromBranch(branch string, detected []string) []string {
 	}
 	fmt.Println()
 	fmt.Printf("    %s\n", branchStyle.Render("Linkear: [a] todas · [1-N] una específica · [n] ninguna"))
-	answer := readLine("    > ")
+	answer := ui.ReadLine("    > ")
 	answer = strings.TrimSpace(strings.ToLower(answer))
 	switch {
 	case answer == "" || answer == "a" || answer == "all":
@@ -155,25 +154,6 @@ func promptForHUsFromBranch(branch string, detected []string) []string {
 		}
 		return picked
 	}
-}
-
-func askYesNo(prompt string, defaultYes bool) bool {
-	answer := readLine("    " + prompt + " ")
-	answer = strings.TrimSpace(strings.ToLower(answer))
-	if answer == "" {
-		return defaultYes
-	}
-	return answer == "y" || answer == "yes" || answer == "s" || answer == "si" || answer == "sí"
-}
-
-func readLine(prompt string) string {
-	fmt.Print(prompt)
-	reader := bufio.NewReader(os.Stdin)
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		return ""
-	}
-	return line
 }
 
 func printLinkedHUs(keys []string) {

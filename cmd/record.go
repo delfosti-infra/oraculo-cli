@@ -53,7 +53,7 @@ var recordCmd = &cobra.Command{
 
 		if !playwrightTestResolvable() {
 			ui.PrintWarning("Tu proyecto no tiene @playwright/test, necesario para grabar el flow.")
-			if !askYesNo("¿Lo instalo ahora con npm install -D @playwright/test? [S/n]", true) {
+			if !ui.PromptYesNo("¿Lo instalo ahora con npm install -D @playwright/test? [S/n]", true) {
 				printPlaywrightTestModuleHint()
 				return ui.ErrAlreadyReported
 			}
@@ -82,7 +82,7 @@ var recordCmd = &cobra.Command{
 
 		if _, err := os.Stat(specPath); err == nil {
 			ui.PrintWarning(fmt.Sprintf("Ya existe un flow llamado `%s`.", slug))
-			if !askYesNo("¿Lo regrabas y reemplazas el actual? [s/N]", false) {
+			if !ui.PromptYesNo("¿Lo regrabas y reemplazas el actual? [s/N]", false) {
 				ui.PrintHint("Sin cambios. Graba con otro nombre, o vuelve a correr y confirma para reemplazar.")
 				return nil
 			}
@@ -94,7 +94,7 @@ var recordCmd = &cobra.Command{
 
 		if !recordFreshFlag && looksLikeLoginFlow(slug) {
 			ui.PrintWarning("Parece que vas a grabar el flow de login. Con la sesión guardada el browser abre ya autenticado y el login no queda grabado.")
-			if askYesNo("¿Grabar con navegador limpio, sin la sesión guardada (--fresh)? [S/n]", true) {
+			if ui.PromptYesNo("¿Grabar con navegador limpio, sin la sesión guardada (--fresh)? [S/n]", true) {
 				recordFreshFlag = true
 			}
 		}
@@ -285,7 +285,7 @@ func recordMobile(e2eDir, slug, platform string) error {
 	outPath := filepath.Join(e2eDir, slug+".mobile.json")
 	if _, err := os.Stat(outPath); err == nil {
 		ui.PrintWarning(fmt.Sprintf("Ya existe un flow móvil `%s`.", slug))
-		if !askYesNo("¿Lo regrabás y reemplazás el actual? [s/N]", false) {
+		if !ui.PromptYesNo("¿Lo regrabás y reemplazás el actual? [s/N]", false) {
 			ui.PrintHint("Sin cambios. Graba con otro nombre o confirma para reemplazar.")
 			return nil
 		}
