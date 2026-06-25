@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -22,10 +23,13 @@ import (
 
 var pushCoreFlag bool
 
+var errFlowUnchanged = errors.New("el flow ya existe sin cambios")
+
 type pushResult struct {
-	slug   string
-	ok     bool
-	detail string
+	slug      string
+	ok        bool
+	unchanged bool
+	detail    string
 }
 
 var pushCmd = &cobra.Command{
@@ -84,6 +88,11 @@ var pushCmd = &cobra.Command{
 			spinner.Start()
 			flowRefId, detail, err := pushFlow(client, config, token, e2eDir, slug)
 			spinner.Stop()
+			if errors.Is(err, errFlowUnchanged) {
+				results = append(results, pushResult{slug: slug, unchanged: true, detail: "sin cambios"})
+				ui.PrintStep(fmt.Sprintf("'%s' · sin cambios, ya estaba subido", slug))
+				continue
+			}
 			if err != nil {
 				results = append(results, pushResult{slug: slug, ok: false, detail: err.Error()})
 				ui.PrintWarning(fmt.Sprintf("'%s' · %s", slug, err.Error()))
@@ -102,21 +111,34 @@ var pushCmd = &cobra.Command{
 			ui.PrintStep(fmt.Sprintf("'%s' · %s", slug, detail))
 		}
 
-		ok, fail := 0, 0
+		ok, unchanged, fail := 0, 0, 0
 		for _, r := range results {
-			if r.ok {
+			switch {
+			case r.ok:
 				ok++
-			} else {
+			case r.unchanged:
+				unchanged++
+			default:
 				fail++
 			}
 		}
 
 		if fail > 0 {
-			return ui.Fail("%d ok · %d con error", ok, fail)
+			return ui.Fail("%d nuevo(s) · %d sin cambios · %d con error", ok, unchanged, fail)
 		}
-		ui.PrintSuccess(fmt.Sprintf("%d flow(s) subido(s) exitosamente", ok))
+		ui.PrintSuccess(pushSummary(ok, unchanged))
 		return nil
 	},
+}
+
+func pushSummary(uploaded, unchanged int) string {
+	if uploaded == 0 && unchanged > 0 {
+		return fmt.Sprintf("Sin cambios para subir (%d flow(s) ya estaban al día)", unchanged)
+	}
+	if unchanged > 0 {
+		return fmt.Sprintf("%d flow(s) nuevo(s) subido(s) · %d sin cambios", uploaded, unchanged)
+	}
+	return fmt.Sprintf("%d flow(s) subido(s) exitosamente", uploaded)
 }
 
 func discoverFlows(e2eDir string) ([]string, error) {
@@ -220,6 +242,9 @@ func pushFlow(client *http.Client, config *types.Config, token, e2eDir, slug str
 		return "", "", fmt.Errorf("no se pudo leer la respuesta: %w", err)
 	}
 
+	if resp.StatusCode == http.StatusConflict {
+		return "", "", errFlowUnchanged
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", "", fmt.Errorf("%s", api.ErrorMessage(respBody, resp.StatusCode))
 	}
