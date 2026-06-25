@@ -7,3 +7,15 @@ type ToggleFlowCoreRequest struct {
 type FlowRef struct {
 	RefId string `json:"refId"`
 }
+
+type FlowSummary struct {
+	RefId       string `json:"refId"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	SpecContent string `json:"specContent"`
+	UpdatedAt   string `json:"updatedAt"`
+}
+
+type UpdateFlowSpecRequest struct {
+	SpecContent string `json:"specContent"`
+}

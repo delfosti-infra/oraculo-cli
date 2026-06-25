@@ -22,12 +22,15 @@ import (
 )
 
 var pushCoreFlag bool
+var pushYesFlag bool
 
 var errFlowUnchanged = errors.New("el flow ya existe sin cambios")
+var errReplaceDeclined = errors.New("reemplazo cancelado por el usuario")
 
 type pushResult struct {
 	slug      string
 	ok        bool
+	replaced  bool
 	unchanged bool
 	detail    string
 }
@@ -84,36 +87,15 @@ var pushCmd = &cobra.Command{
 		var results []pushResult
 
 		for _, slug := range targetSlugs {
-			spinner := ui.NewSpinner(fmt.Sprintf("Subiendo '%s'...", slug))
-			spinner.Start()
-			flowRefId, detail, err := pushFlow(client, config, token, e2eDir, slug)
-			spinner.Stop()
-			if errors.Is(err, errFlowUnchanged) {
-				results = append(results, pushResult{slug: slug, unchanged: true, detail: "sin cambios"})
-				ui.PrintStep(fmt.Sprintf("'%s' · sin cambios, ya estaba subido", slug))
-				continue
-			}
-			if err != nil {
-				results = append(results, pushResult{slug: slug, ok: false, detail: err.Error()})
-				ui.PrintWarning(fmt.Sprintf("'%s' · %s", slug, err.Error()))
-				continue
-			}
-
-			if pushCoreFlag {
-				if err := apiClient.ToggleFlowCore(token, config.RefId, flowRefId, true); err != nil {
-					ui.PrintWarning(fmt.Sprintf("'%s' subido pero falló al marcar como core: %s", slug, err.Error()))
-				} else {
-					detail = detail + " · marcado como ★ Core"
-				}
-			}
-
-			results = append(results, pushResult{slug: slug, ok: true, detail: detail})
-			ui.PrintStep(fmt.Sprintf("'%s' · %s", slug, detail))
+			result := pushOne(client, apiClient, config, token, e2eDir, slug)
+			results = append(results, result)
 		}
 
-		ok, unchanged, fail := 0, 0, 0
+		ok, replaced, unchanged, fail := 0, 0, 0, 0
 		for _, r := range results {
 			switch {
+			case r.replaced:
+				replaced++
 			case r.ok:
 				ok++
 			case r.unchanged:
@@ -124,21 +106,164 @@ var pushCmd = &cobra.Command{
 		}
 
 		if fail > 0 {
-			return ui.Fail("%d nuevo(s) · %d sin cambios · %d con error", ok, unchanged, fail)
+			return ui.Fail("%d nuevo(s) · %d reemplazado(s) · %d sin cambios · %d con error", ok, replaced, unchanged, fail)
 		}
-		ui.PrintSuccess(pushSummary(ok, unchanged))
+		ui.PrintSuccess(pushSummary(ok, replaced, unchanged))
 		return nil
 	},
 }
 
-func pushSummary(uploaded, unchanged int) string {
-	if uploaded == 0 && unchanged > 0 {
+func pushOne(
+	client *http.Client,
+	apiClient *api.Client,
+	config *types.Config,
+	token, e2eDir, slug string,
+) pushResult {
+	existing, err := apiClient.FindFlowBySlug(token, config.RefId, slug)
+	if err != nil {
+		ui.PrintWarning(fmt.Sprintf("'%s' · no se pudo consultar el backoffice: %s", slug, err.Error()))
+		return pushResult{slug: slug, ok: false, detail: err.Error()}
+	}
+
+	if existing != nil {
+		return replaceExistingFlow(apiClient, config, token, e2eDir, slug, existing)
+	}
+
+	return createNewFlow(client, apiClient, config, token, e2eDir, slug)
+}
+
+func createNewFlow(
+	client *http.Client,
+	apiClient *api.Client,
+	config *types.Config,
+	token, e2eDir, slug string,
+) pushResult {
+	spinner := ui.NewSpinner(fmt.Sprintf("Subiendo '%s'...", slug))
+	spinner.Start()
+	flowRefId, detail, err := pushFlow(client, config, token, e2eDir, slug)
+	spinner.Stop()
+
+	if errors.Is(err, errFlowUnchanged) {
+		ui.PrintStep(fmt.Sprintf("'%s' · ya existe en el backoffice; corré 'oraculo push %s' de nuevo para ver el diff", slug, slug))
+		return pushResult{slug: slug, unchanged: true, detail: "ya existía"}
+	}
+	if err != nil {
+		ui.PrintWarning(fmt.Sprintf("'%s' · %s", slug, err.Error()))
+		return pushResult{slug: slug, ok: false, detail: err.Error()}
+	}
+
+	if pushCoreFlag {
+		if err := apiClient.ToggleFlowCore(token, config.RefId, flowRefId, true); err != nil {
+			ui.PrintWarning(fmt.Sprintf("'%s' subido pero falló al marcar como core: %s", slug, err.Error()))
+		} else {
+			detail = detail + " · marcado como ★ Core"
+		}
+	}
+
+	ui.PrintStep(fmt.Sprintf("'%s' · %s", slug, detail))
+	return pushResult{slug: slug, ok: true, detail: detail}
+}
+
+func replaceExistingFlow(
+	apiClient *api.Client,
+	config *types.Config,
+	token, e2eDir, slug string,
+	existing *types.FlowSummary,
+) pushResult {
+	localSpec, err := readLocalSpec(e2eDir, slug)
+	if err != nil {
+		ui.PrintWarning(fmt.Sprintf("'%s' · %s", slug, err.Error()))
+		return pushResult{slug: slug, ok: false, detail: err.Error()}
+	}
+
+	if ui.SpecsEqual(existing.SpecContent, localSpec) {
+		ui.PrintStep(fmt.Sprintf("'%s' · sin cambios, ya estaba al día en el backoffice", slug))
+		return pushResult{slug: slug, unchanged: true, detail: "sin cambios"}
+	}
+
+	if err := confirmReplace(slug, existing, localSpec); err != nil {
+		if errors.Is(err, errReplaceDeclined) {
+			ui.PrintStep(fmt.Sprintf("'%s' · sin cambios (reemplazo cancelado)", slug))
+			return pushResult{slug: slug, unchanged: true, detail: "reemplazo cancelado"}
+		}
+		ui.PrintWarning(fmt.Sprintf("'%s' · %s", slug, err.Error()))
+		return pushResult{slug: slug, ok: false, detail: err.Error()}
+	}
+
+	spinner := ui.NewSpinner(fmt.Sprintf("Reemplazando '%s' en el backoffice...", slug))
+	spinner.Start()
+	updateErr := apiClient.UpdateFlowSpec(token, config.RefId, existing.RefId, localSpec)
+	spinner.Stop()
+	if updateErr != nil {
+		ui.PrintWarning(fmt.Sprintf("'%s' · %s", slug, updateErr.Error()))
+		return pushResult{slug: slug, ok: false, detail: updateErr.Error()}
+	}
+
+	detail := "spec reemplazado"
+	if pushCoreFlag {
+		if err := apiClient.ToggleFlowCore(token, config.RefId, existing.RefId, true); err != nil {
+			ui.PrintWarning(fmt.Sprintf("'%s' reemplazado pero falló al marcar como core: %s", slug, err.Error()))
+		} else {
+			detail = detail + " · marcado como ★ Core"
+		}
+	}
+
+	ui.PrintStep(fmt.Sprintf("'%s' · %s", slug, detail))
+	ui.PrintHint("Las screenshots del flow quedaron marcadas como desactualizadas. Hoy el endpoint de update solo reemplaza el spec; re-subir las nuevas capturas necesita soporte en el core (pendiente).")
+	return pushResult{slug: slug, replaced: true, detail: detail}
+}
+
+func confirmReplace(slug string, existing *types.FlowSummary, localSpec string) error {
+	remoteLabel := fmt.Sprintf("backoffice: %s", slug)
+	if existing.UpdatedAt != "" {
+		remoteLabel = fmt.Sprintf("%s (actualizado %s)", remoteLabel, existing.UpdatedAt)
+	}
+	ui.PrintSpecDiff(remoteLabel, "local: "+slug+".spec.ts", existing.SpecContent, localSpec)
+
+	ui.PrintWarning(fmt.Sprintf("Esto REEMPLAZA el flow '%s' en el backoffice con tu spec local.", slug))
+	if pushYesFlag {
+		return nil
+	}
+	if !ui.PromptYesNo(fmt.Sprintf("¿Reemplazar '%s' en el backoffice? [s/N]", slug), false) {
+		return errReplaceDeclined
+	}
+	return nil
+}
+
+func resolveSpecPath(e2eDir, slug string) string {
+	mobilePath := filepath.Join(e2eDir, slug+".mobile.json")
+	if _, statErr := os.Stat(mobilePath); statErr == nil {
+		return mobilePath
+	}
+	return filepath.Join(e2eDir, slug+".spec.ts")
+}
+
+func readLocalSpec(e2eDir, slug string) (string, error) {
+	specPath := resolveSpecPath(e2eDir, slug)
+	specContent, err := os.ReadFile(specPath)
+	if err != nil {
+		return "", fmt.Errorf("no se pudo leer %s: %w", specPath, err)
+	}
+	return string(specContent), nil
+}
+
+func pushSummary(uploaded, replaced, unchanged int) string {
+	changed := uploaded + replaced
+	if changed == 0 && unchanged > 0 {
 		return fmt.Sprintf("Sin cambios para subir (%d flow(s) ya estaban al día)", unchanged)
 	}
-	if unchanged > 0 {
-		return fmt.Sprintf("%d flow(s) nuevo(s) subido(s) · %d sin cambios", uploaded, unchanged)
+
+	var parts []string
+	if uploaded > 0 {
+		parts = append(parts, fmt.Sprintf("%d nuevo(s)", uploaded))
 	}
-	return fmt.Sprintf("%d flow(s) subido(s) exitosamente", uploaded)
+	if replaced > 0 {
+		parts = append(parts, fmt.Sprintf("%d reemplazado(s)", replaced))
+	}
+	if unchanged > 0 {
+		parts = append(parts, fmt.Sprintf("%d sin cambios", unchanged))
+	}
+	return strings.Join(parts, " · ")
 }
 
 func discoverFlows(e2eDir string) ([]string, error) {
@@ -171,11 +296,7 @@ func discoverFlows(e2eDir string) ([]string, error) {
 }
 
 func pushFlow(client *http.Client, config *types.Config, token, e2eDir, slug string) (string, string, error) {
-	specPath := filepath.Join(e2eDir, slug+".spec.ts")
-	mobilePath := filepath.Join(e2eDir, slug+".mobile.json")
-	if _, statErr := os.Stat(mobilePath); statErr == nil {
-		specPath = mobilePath
-	}
+	specPath := resolveSpecPath(e2eDir, slug)
 	specContent, err := os.ReadFile(specPath)
 	if err != nil {
 		return "", "", fmt.Errorf("no se pudo leer %s: %w", specPath, err)
@@ -310,5 +431,6 @@ func slugToName(slug string) string {
 
 func init() {
 	pushCmd.Flags().BoolVar(&pushCoreFlag, "core", false, "Marca el flow como parte del Core Suite del proyecto")
+	pushCmd.Flags().BoolVarP(&pushYesFlag, "yes", "y", false, "No pide confirmación al reemplazar un flow que ya existe en el backoffice")
 	rootCmd.AddCommand(pushCmd)
 }

@@ -143,6 +143,81 @@ func (c *Client) ToggleFlowCore(token, projectRefId, flowRefId string, isCore bo
 	return nil
 }
 
+func (c *Client) ListFlows(token, projectRefId string) ([]types.FlowSummary, error) {
+	url := fmt.Sprintf("%s/projects/%s/flows?pageNumber=0&pageSize=500", c.baseURL, projectRefId)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo construir el request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo conectar con el API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo leer la respuesta: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("%s", ErrorMessage(respBody, resp.StatusCode))
+	}
+
+	page, err := types.UnwrapJSON[types.PageableResponse[types.FlowSummary]](respBody)
+	if err != nil {
+		return nil, fmt.Errorf("list flows: %w", err)
+	}
+	return page.Content, nil
+}
+
+func (c *Client) FindFlowBySlug(token, projectRefId, slug string) (*types.FlowSummary, error) {
+	flows, err := c.ListFlows(token, projectRefId)
+	if err != nil {
+		return nil, err
+	}
+	for i := range flows {
+		if flows[i].Slug == slug {
+			return &flows[i], nil
+		}
+	}
+	return nil, nil
+}
+
+func (c *Client) UpdateFlowSpec(token, projectRefId, flowRefId, specContent string) error {
+	body, err := json.Marshal(types.UpdateFlowSpecRequest{SpecContent: specContent})
+	if err != nil {
+		return fmt.Errorf("no se pudo serializar la solicitud: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/projects/%s/flows/%s/spec", c.baseURL, projectRefId, flowRefId)
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(body))
+	if err != nil {
+		return fmt.Errorf("no se pudo construir el request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("no se pudo conectar con el API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("no se pudo leer la respuesta: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("%s", ErrorMessage(respBody, resp.StatusCode))
+	}
+
+	return nil
+}
+
 // GetAuthSessionState descarga el storageState (Playwright) descifrado del proyecto.
 // Devuelve (nil, nil) si no hay sesión usable: 404 (no existe) o 410 (expiró).
 func (c *Client) GetAuthSessionState(token, projectRefId string) ([]byte, error) {

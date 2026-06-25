@@ -88,6 +88,7 @@ var recordCmd = &cobra.Command{
 			}
 			removeFlowArtifacts(e2eDir, slug)
 			ui.PrintStep(fmt.Sprintf("Reemplazando `%s` — se borraron spec, trace, screenshots y meta anteriores.", slug))
+			ui.PrintHint("Si este flow ya está en el backoffice, 'oraculo push' te mostrará el diff y pedirá confirmar antes de reemplazarlo.")
 		}
 
 		huKeys := resolveHUsForRecord(recordHUFlag)
@@ -679,36 +680,40 @@ func normalizePlatform(raw string) string {
 	}
 }
 
-func init() {
-	recordCmd.Flags().StringSliceVar(
+func registerRecordFlags(cmd *cobra.Command) {
+	cmd.Flags().StringSliceVar(
 		&recordHUFlag,
 		"HU",
 		nil,
 		"HU(s) de Jira asociadas a este flow (ej. --HU=KDP0-6 --HU=KDP0-7). Si no se especifica, intenta detectar desde la branch.",
 	)
-	recordCmd.Flags().BoolVar(
+	cmd.Flags().BoolVar(
 		&recordFreshFlag,
 		"fresh",
 		false,
 		"Graba sin la sesión guardada del proyecto (navegador limpio). Úsalo para el flow de login.",
 	)
-	recordCmd.Flags().StringVar(
+	cmd.Flags().StringVar(
 		&recordPlatformFlag,
 		"platform",
 		"",
 		"Plataforma del flow: web (default), ios o android.",
 	)
-	recordCmd.Flags().StringVar(
+	cmd.Flags().StringVar(
 		&recordAppFlag,
 		"app",
 		"",
 		"(móvil) appPackage/bundleId o ruta al .apk/.ipa a grabar.",
 	)
-	recordCmd.Flags().StringVar(
+	cmd.Flags().StringVar(
 		&recordAppActivityFlag,
 		"app-activity",
 		"",
 		"(móvil, Android) activity de arranque, si la app la requiere.",
 	)
+}
+
+func init() {
+	registerRecordFlags(recordCmd)
 	rootCmd.AddCommand(recordCmd)
 }
