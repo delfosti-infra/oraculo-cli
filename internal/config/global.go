@@ -137,3 +137,10 @@ func ResolveAPIURL(flag, projectAPIURL string) string {
 	}
 	return DefaultAPIURL
 }
+
+func DisplayAPIURL(apiURL string) string {
+	if NormalizeURL(apiURL) == DefaultAPIURL {
+		return "backend hosteado de Oráculo"
+	}
+	return apiURL
+}

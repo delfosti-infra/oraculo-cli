@@ -14,10 +14,10 @@ func TestPushSummary(t *testing.T) {
 		want      string
 	}{
 		{"solo nuevos", 2, 0, 0, "2 nuevo(s)"},
-		{"solo reemplazos", 0, 3, 0, "3 reemplazado(s)"},
+		{"solo reemplazos", 0, 3, 0, "3 con versión nueva"},
 		{"solo sin cambios", 0, 0, 4, "ya estaban al día"},
-		{"nuevo y reemplazo", 1, 1, 0, "1 nuevo(s) · 1 reemplazado(s)"},
-		{"mezcla completa", 1, 1, 1, "1 nuevo(s) · 1 reemplazado(s) · 1 sin cambios"},
+		{"nuevo y reemplazo", 1, 1, 0, "1 nuevo(s) · 1 con versión nueva"},
+		{"mezcla completa", 1, 1, 1, "1 nuevo(s) · 1 con versión nueva · 1 sin cambios"},
 	}
 	for _, c := range cases {
 		got := pushSummary(c.uploaded, c.replaced, c.unchanged)

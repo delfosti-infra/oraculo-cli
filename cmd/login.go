@@ -41,7 +41,7 @@ func runLogin() error {
 	)
 
 	apiURL := config.ResolveAPIURL(loginAPIURLFlag, projectConfigAPIURL())
-	ui.PrintStep(fmt.Sprintf("API: %s", apiURL))
+	ui.PrintStep(fmt.Sprintf("API: %s", config.DisplayAPIURL(apiURL)))
 
 	reader := bufio.NewReader(os.Stdin)
 

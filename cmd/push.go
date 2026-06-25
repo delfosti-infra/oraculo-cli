@@ -25,7 +25,7 @@ var pushCoreFlag bool
 var pushYesFlag bool
 
 var errFlowUnchanged = errors.New("el flow ya existe sin cambios")
-var errReplaceDeclined = errors.New("reemplazo cancelado por el usuario")
+var errReplaceDeclined = errors.New("cancelado por el usuario")
 
 type pushResult struct {
 	slug      string
@@ -106,7 +106,7 @@ var pushCmd = &cobra.Command{
 		}
 
 		if fail > 0 {
-			return ui.Fail("%d nuevo(s) · %d reemplazado(s) · %d sin cambios · %d con error", ok, replaced, unchanged, fail)
+			return ui.Fail("%d nuevo(s) · %d con versión nueva · %d sin cambios · %d con error", ok, replaced, unchanged, fail)
 		}
 		ui.PrintSuccess(pushSummary(ok, replaced, unchanged))
 		return nil
@@ -183,8 +183,8 @@ func replaceExistingFlow(
 
 	if err := confirmReplace(slug, existing, localSpec); err != nil {
 		if errors.Is(err, errReplaceDeclined) {
-			ui.PrintStep(fmt.Sprintf("'%s' · sin cambios (reemplazo cancelado)", slug))
-			return pushResult{slug: slug, unchanged: true, detail: "reemplazo cancelado"}
+			ui.PrintStep(fmt.Sprintf("'%s' · sin cambios (cancelado)", slug))
+			return pushResult{slug: slug, unchanged: true, detail: "cancelado"}
 		}
 		ui.PrintWarning(fmt.Sprintf("'%s' · %s", slug, err.Error()))
 		return pushResult{slug: slug, ok: false, detail: err.Error()}
@@ -199,20 +199,20 @@ func replaceExistingFlow(
 		return pushResult{slug: slug, ok: false, detail: updateErr.Error()}
 	}
 
-	detail := "spec reemplazado"
+	detail := "versión nueva subida"
 	if existing.SpecVersion > 0 {
-		detail = fmt.Sprintf("spec reemplazado (ahora v%d)", existing.SpecVersion+1)
+		detail = fmt.Sprintf("versión v%d creada", existing.SpecVersion+1)
 	}
 	if pushCoreFlag {
 		if err := apiClient.ToggleFlowCore(token, config.RefId, existing.RefId, true); err != nil {
-			ui.PrintWarning(fmt.Sprintf("'%s' reemplazado pero falló al marcar como core: %s", slug, err.Error()))
+			ui.PrintWarning(fmt.Sprintf("'%s' subido pero falló al marcar como core: %s", slug, err.Error()))
 		} else {
 			detail = detail + " · marcado como ★ Core"
 		}
 	}
 
 	ui.PrintStep(fmt.Sprintf("'%s' · %s", slug, detail))
-	ui.PrintHint("Las screenshots del flow quedaron marcadas como desactualizadas. Hoy el endpoint de update solo reemplaza el spec; re-subir las nuevas capturas necesita soporte en el core (pendiente).")
+	ui.PrintHint("Las screenshots del flow quedaron marcadas como desactualizadas. Hoy el update solo actualiza el spec; re-subir las nuevas capturas necesita soporte en el core (pendiente).")
 	return pushResult{slug: slug, replaced: true, detail: detail}
 }
 
@@ -226,18 +226,18 @@ func confirmReplace(slug string, existing *types.FlowSummary, localSpec string) 
 	}
 	ui.PrintSpecDiff(remoteLabel, "local: "+slug+".spec.ts", existing.SpecContent, localSpec)
 
-	warning := fmt.Sprintf("Esto REEMPLAZA el flow '%s' en el backoffice con tu spec local.", slug)
+	prompt := fmt.Sprintf("¿Subir '%s' como versión nueva? [s/N]", slug)
 	if existing.SpecVersion > 0 {
-		warning = fmt.Sprintf(
-			"Esto REEMPLAZA el flow '%s' (v%d → v%d) en el backoffice con tu spec local.",
-			slug, existing.SpecVersion, existing.SpecVersion+1,
-		)
+		ui.PrintStep(fmt.Sprintf(
+			"Se creará la versión v%d de '%s'. La v%d queda en el historial.",
+			existing.SpecVersion+1, slug, existing.SpecVersion,
+		))
+		prompt = fmt.Sprintf("¿Crear la versión v%d de '%s'? [s/N]", existing.SpecVersion+1, slug)
 	}
-	ui.PrintWarning(warning)
 	if pushYesFlag {
 		return nil
 	}
-	if !ui.PromptYesNo(fmt.Sprintf("¿Reemplazar '%s' en el backoffice? [s/N]", slug), false) {
+	if !ui.PromptYesNo(prompt, false) {
 		return errReplaceDeclined
 	}
 	return nil
@@ -271,7 +271,7 @@ func pushSummary(uploaded, replaced, unchanged int) string {
 		parts = append(parts, fmt.Sprintf("%d nuevo(s)", uploaded))
 	}
 	if replaced > 0 {
-		parts = append(parts, fmt.Sprintf("%d reemplazado(s)", replaced))
+		parts = append(parts, fmt.Sprintf("%d con versión nueva", replaced))
 	}
 	if unchanged > 0 {
 		parts = append(parts, fmt.Sprintf("%d sin cambios", unchanged))
@@ -444,6 +444,6 @@ func slugToName(slug string) string {
 
 func init() {
 	pushCmd.Flags().BoolVar(&pushCoreFlag, "core", false, "Marca el flow como parte del Core Suite del proyecto")
-	pushCmd.Flags().BoolVarP(&pushYesFlag, "yes", "y", false, "No pide confirmación al reemplazar un flow que ya existe en el backoffice")
+	pushCmd.Flags().BoolVarP(&pushYesFlag, "yes", "y", false, "No pide confirmación al crear una versión nueva de un flow existente")
 	rootCmd.AddCommand(pushCmd)
 }

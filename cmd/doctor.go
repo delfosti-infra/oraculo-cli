@@ -68,10 +68,10 @@ func runDoctor() error {
 	client := api.NewClient(apiURL)
 	if err := client.Ping(); err != nil {
 		hardFail = true
-		ui.PrintCheckFail("Backend inalcanzable (" + apiURL + ")")
+		ui.PrintCheckFail("Backend inalcanzable (" + appconfig.DisplayAPIURL(apiURL) + ")")
 		ui.PrintHint("Verifica tu conexión. Para apuntar a otro backend usa --api-url o ORACULO_API_URL.")
 	} else {
-		ui.PrintStep("Backend alcanzable (" + apiURL + ")")
+		ui.PrintStep("Backend alcanzable (" + appconfig.DisplayAPIURL(apiURL) + ")")
 		pending = !checkSession(client) || pending
 	}
 
