@@ -20,6 +20,13 @@ var (
 	authExpiresInDaysFlag int
 )
 
+type capturedStorageState struct {
+	Cookies []json.RawMessage `json:"cookies"`
+	Origins []struct {
+		LocalStorage []json.RawMessage `json:"localStorage"`
+	} `json:"origins"`
+}
+
 var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Captura y guarda la sesión autenticada del proyecto (storageState)",
@@ -118,9 +125,20 @@ func runAuthCapture() error {
 		return ui.Fail("No se capturó la sesión. ¿Cerraste el browser sin loguearte?")
 	}
 
-	var probe map[string]any
-	if err := json.Unmarshal(stateData, &probe); err != nil {
+	var state capturedStorageState
+	if err := json.Unmarshal(stateData, &state); err != nil {
 		return ui.Fail("El storageState capturado no es JSON válido.")
+	}
+
+	localStorageCount := 0
+	for _, origin := range state.Origins {
+		localStorageCount += len(origin.LocalStorage)
+	}
+	if len(state.Cookies) == 0 && localStorageCount == 0 {
+		return ui.Fail(
+			"No se detectó ninguna sesión (0 cookies, 0 localStorage). " +
+				"¿Cerraste el browser sin iniciar sesión? Corre `oraculo auth` de nuevo e inicia sesión antes de cerrarlo.",
+		)
 	}
 
 	apiClient := api.NewClient(strings.TrimRight(config.APIURL, "/"))
@@ -140,8 +158,9 @@ func runAuthCapture() error {
 		expiry = "expira " + *meta.ExpiresAt
 	}
 	ui.PrintSuccess(fmt.Sprintf(
-		"Sesión '%s' guardada para '%s' (%s). Graba con `oraculo record <nombre>` sin el login.",
-		meta.Label, config.Project, expiry,
+		"Sesión '%s' guardada para '%s' (%s) · %d cookies, %d entradas de localStorage. "+
+			"Graba con `oraculo record <nombre>` sin el login.",
+		meta.Label, config.Project, expiry, len(state.Cookies), localStorageCount,
 	))
 	return nil
 }
