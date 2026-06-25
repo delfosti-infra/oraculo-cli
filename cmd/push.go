@@ -144,7 +144,7 @@ func createNewFlow(
 	spinner.Stop()
 
 	if errors.Is(err, errFlowUnchanged) {
-		ui.PrintStep(fmt.Sprintf("'%s' · ya existe en el backoffice; corré 'oraculo push %s' de nuevo para ver el diff", slug, slug))
+		ui.PrintStep(fmt.Sprintf("'%s' · ya existe en el backoffice; corre 'oraculo push %s' de nuevo para ver el diff", slug, slug))
 		return pushResult{slug: slug, unchanged: true, detail: "ya existía"}
 	}
 	if err != nil {

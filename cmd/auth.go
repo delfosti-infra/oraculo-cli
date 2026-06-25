@@ -179,7 +179,7 @@ func runAuthStatus() error {
 	}
 	if meta.Expired {
 		ui.PrintWarning(fmt.Sprintf(
-			"Sesión '%s' (capturada %s) EXPIRADA — refrescala con `oraculo auth`.",
+			"Sesión '%s' (capturada %s) EXPIRADA — refréscala con `oraculo auth`.",
 			meta.Label, meta.CapturedAt,
 		))
 		return nil

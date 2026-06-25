@@ -242,7 +242,7 @@ var recordCmd = &cobra.Command{
 		platform := normalizePlatform(recordPlatformFlag)
 		if recordPlatformFlag != "" && platform == "" {
 			ui.PrintWarning(fmt.Sprintf(
-				"Plataforma inválida '%s' (usá web, ios o android). Se ignora.",
+				"Plataforma inválida '%s' (usa web, ios o android). Se ignora.",
 				recordPlatformFlag,
 			))
 		}
@@ -280,13 +280,13 @@ func recorderCommand() []string {
 func recordMobile(e2eDir, slug, platform string) error {
 	app := strings.TrimSpace(recordAppFlag)
 	if app == "" {
-		return ui.Fail("Para grabar un flow móvil necesitás --app (appPackage/bundleId o ruta al .apk/.ipa).")
+		return ui.Fail("Para grabar un flow móvil necesitas --app (appPackage/bundleId o ruta al .apk/.ipa).")
 	}
 
 	outPath := filepath.Join(e2eDir, slug+".mobile.json")
 	if _, err := os.Stat(outPath); err == nil {
 		ui.PrintWarning(fmt.Sprintf("Ya existe un flow móvil `%s`.", slug))
-		if !ui.PromptYesNo("¿Lo regrabás y reemplazás el actual? [s/N]", false) {
+		if !ui.PromptYesNo("¿Lo regrabas y reemplazas el actual? [s/N]", false) {
 			ui.PrintHint("Sin cambios. Graba con otro nombre o confirma para reemplazar.")
 			return nil
 		}
@@ -309,13 +309,13 @@ func recordMobile(e2eDir, slug, platform string) error {
 		args = append(args, "--appium", appium)
 	}
 
-	ui.PrintStep("Abriendo el grabador móvil — tocá elementos en la pantalla del device para armar el flow")
+	ui.PrintStep("Abriendo el grabador móvil — toca elementos en la pantalla del device para armar el flow")
 	rec := exec.Command(recorder[0], args...)
 	rec.Stdin = os.Stdin
 	rec.Stdout = os.Stdout
 	rec.Stderr = os.Stderr
 	if err := rec.Run(); err != nil {
-		ui.PrintHint("¿El grabador no está instalado? Definí ORACULO_RECORDER_CMD apuntando al recorder del worker.")
+		ui.PrintHint("¿El grabador no está instalado? Define ORACULO_RECORDER_CMD apuntando al recorder del worker.")
 		return ui.Fail("El grabador móvil terminó con error: %s", err)
 	}
 	if _, err := os.Stat(outPath); err != nil {
