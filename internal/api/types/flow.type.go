@@ -13,6 +13,7 @@ type FlowSummary struct {
 	Name        string `json:"name"`
 	Slug        string `json:"slug"`
 	SpecContent string `json:"specContent"`
+	SpecVersion int    `json:"specVersion"`
 	UpdatedAt   string `json:"updatedAt"`
 }
 

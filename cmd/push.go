@@ -200,6 +200,9 @@ func replaceExistingFlow(
 	}
 
 	detail := "spec reemplazado"
+	if existing.SpecVersion > 0 {
+		detail = fmt.Sprintf("spec reemplazado (ahora v%d)", existing.SpecVersion+1)
+	}
 	if pushCoreFlag {
 		if err := apiClient.ToggleFlowCore(token, config.RefId, existing.RefId, true); err != nil {
 			ui.PrintWarning(fmt.Sprintf("'%s' reemplazado pero falló al marcar como core: %s", slug, err.Error()))
@@ -215,12 +218,22 @@ func replaceExistingFlow(
 
 func confirmReplace(slug string, existing *types.FlowSummary, localSpec string) error {
 	remoteLabel := fmt.Sprintf("backoffice: %s", slug)
+	if existing.SpecVersion > 0 {
+		remoteLabel = fmt.Sprintf("%s v%d", remoteLabel, existing.SpecVersion)
+	}
 	if existing.UpdatedAt != "" {
 		remoteLabel = fmt.Sprintf("%s (actualizado %s)", remoteLabel, existing.UpdatedAt)
 	}
 	ui.PrintSpecDiff(remoteLabel, "local: "+slug+".spec.ts", existing.SpecContent, localSpec)
 
-	ui.PrintWarning(fmt.Sprintf("Esto REEMPLAZA el flow '%s' en el backoffice con tu spec local.", slug))
+	warning := fmt.Sprintf("Esto REEMPLAZA el flow '%s' en el backoffice con tu spec local.", slug)
+	if existing.SpecVersion > 0 {
+		warning = fmt.Sprintf(
+			"Esto REEMPLAZA el flow '%s' (v%d → v%d) en el backoffice con tu spec local.",
+			slug, existing.SpecVersion, existing.SpecVersion+1,
+		)
+	}
+	ui.PrintWarning(warning)
 	if pushYesFlag {
 		return nil
 	}
