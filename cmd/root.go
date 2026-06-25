@@ -17,7 +17,7 @@ var rootCmd = &cobra.Command{
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ui.PrintBanner()
+		ui.PrintBanner(resolveVersion())
 		if tui.IsInteractive() {
 			return tui.Run(cmd.Root())
 		}

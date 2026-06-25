@@ -10,8 +10,6 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
-const version = "v1.1.0"
-
 const asciiLogo = ` ██████╗ ██████╗  █████╗  ██████╗██╗   ██╗██╗      ██████╗
 ██╔═══██╗██╔══██╗██╔══██╗██╔════╝██║   ██║██║     ██╔═══██╗
 ██║   ██║██████╔╝███████║██║     ██║   ██║██║     ██║   ██║
@@ -69,7 +67,7 @@ func isTTY() bool {
 	return isatty.IsTerminal(os.Stdout.Fd())
 }
 
-func PrintBanner() {
+func PrintBanner(version string) {
 	animated := isTTY()
 	lines := strings.Split(asciiLogo, "\n")
 

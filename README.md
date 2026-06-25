@@ -47,7 +47,7 @@ oraculo push                         # súbelo al backoffice
 **Instalar una versión específica**
 
 ```bash
-ORACULO_VERSION=v1.2.3 bash -c "$(curl -sSL https://raw.githubusercontent.com/delfosti-infra/oraculo-cli/main/install.sh)"
+ORACULO_VERSION=v1.3.0 bash -c "$(curl -sSL https://raw.githubusercontent.com/delfosti-infra/oraculo-cli/main/install.sh)"
 ```
 
 **Cambiar la carpeta de instalación** (por defecto `~/.local/bin`, en Windows `%LOCALAPPDATA%\Programs\Oraculo`)
