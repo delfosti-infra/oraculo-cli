@@ -2,80 +2,67 @@ package cmd
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
-func TestValidateBrowserPermissions(t *testing.T) {
+func TestParseDetectedPermissions(t *testing.T) {
 	cases := []struct {
-		name        string
-		in          []string
-		wantValid   []string
-		wantInvalid []string
+		name string
+		in   string
+		want []string
 	}{
 		{
-			name:      "csv y case-insensitive",
-			in:        []string{"Geolocation, CAMERA"},
-			wantValid: []string{"geolocation", "camera"},
+			name: "marcadores limpios",
+			in:   "__ORACULO_PERM__ geolocation\nalgo\n__ORACULO_PERM__ camera",
+			want: []string{"camera", "geolocation"},
 		},
 		{
-			name:        "descarta no soportados",
-			in:          []string{"geolocation", "midi"},
-			wantValid:   []string{"geolocation"},
-			wantInvalid: []string{"midi"},
+			name: "dedupe",
+			in:   "__ORACULO_PERM__ geolocation\n__ORACULO_PERM__ geolocation",
+			want: []string{"geolocation"},
 		},
 		{
-			name:      "dedupe",
-			in:        []string{"camera", "camera"},
-			wantValid: []string{"camera"},
+			name: "ignora eco de fuente",
+			in:   "const mark = (p) => { console.log('__ORACULO_PERM__ ' + p); };",
+			want: nil,
 		},
 		{
-			name: "vacio",
-			in:   []string{"", "  "},
+			name: "ignora permiso no soportado",
+			in:   "__ORACULO_PERM__ bluetooth",
+			want: nil,
+		},
+		{
+			name: "sin marcadores",
+			in:   "Running 1 test\n  ok\n",
+			want: nil,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			valid, invalid := validateBrowserPermissions(tc.in)
-			if !reflect.DeepEqual(valid, tc.wantValid) {
-				t.Errorf("valid = %v, want %v", valid, tc.wantValid)
-			}
-			if !reflect.DeepEqual(invalid, tc.wantInvalid) {
-				t.Errorf("invalid = %v, want %v", invalid, tc.wantInvalid)
+			got := parseDetectedPermissions(tc.in)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("got = %v, want %v", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestParseGeolocation(t *testing.T) {
-	cases := []struct {
-		name    string
-		in      string
-		want    *geolocation
-		wantErr bool
-	}{
-		{name: "vacio devuelve nil", in: ""},
-		{name: "valido", in: "-12.0464,-77.0428", want: &geolocation{Lat: -12.0464, Lng: -77.0428}},
-		{name: "con espacios", in: " 40.4, -3.7 ", want: &geolocation{Lat: 40.4, Lng: -3.7}},
-		{name: "formato malo", in: "12.0", wantErr: true},
-		{name: "no numerico", in: "abc,def", wantErr: true},
-		{name: "lat fuera de rango", in: "91,0", wantErr: true},
-		{name: "lng fuera de rango", in: "0,181", wantErr: true},
+func TestInjectPermissionDetection(t *testing.T) {
+	spec := "import { test, expect } from '@playwright/test';\n\n" +
+		"test('x', async ({ page }) => {\n  await page.goto('/');\n});\n"
+
+	out := injectPermissionDetection(spec)
+
+	if !strings.Contains(out, "page.addInitScript") {
+		t.Fatalf("debe inyectar el init script:\n%s", out)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseGeolocation(tc.in)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("se esperaba error para %q", tc.in)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("error inesperado: %v", err)
-			}
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("got = %+v, want %+v", got, tc.want)
-			}
-		})
+	if strings.Index(out, "addInitScript") > strings.Index(out, "page.goto") {
+		t.Errorf("el init script debe ir antes del primer goto:\n%s", out)
+	}
+
+	noMatch := "const x = 1;\n"
+	if injectPermissionDetection(noMatch) != noMatch {
+		t.Errorf("sin cuerpo de test debe devolver el spec intacto")
 	}
 }

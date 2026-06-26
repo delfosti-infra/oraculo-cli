@@ -46,18 +46,16 @@ oraculo push                         # súbelo al backoffice
 
 **Grabar un flow que necesita permisos del navegador**
 
-Si el flujo pide geolocalización (u otro permiso nativo), decláralos al grabar. Se conceden al reproducir el flow para capturar las screenshots y se consolidan en el proyecto (Ajustes › Permisos), para que el worker los aplique en cada ejecución.
+No hace falta nada especial. Oráculo **detecta solo** qué permisos del navegador usa el flow (geolocalización, cámara, micrófono, notificaciones, portapapeles) al reproducirlo y los consolida en el proyecto. Para la ubicación resuelve coordenadas aproximadas por IP; si necesitas precisión, ajústalas en **Ajustes › Permisos** del proyecto.
 
 ```bash
-oraculo record mapa --permissions=geolocation --geolocation=-12.0464,-77.0428
+oraculo record mapa   # los permisos se detectan y se suben solos
 ```
-
-Permisos soportados: `geolocation`, `notifications`, `camera`, `microphone`, `clipboard-read`, `clipboard-write`. Para `geolocation` pasa las coordenadas con `--geolocation=lat,lng`.
 
 **Instalar una versión específica**
 
 ```bash
-ORACULO_VERSION=v1.4.0 bash -c "$(curl -sSL https://raw.githubusercontent.com/delfosti-infra/oraculo-cli/main/install.sh)"
+ORACULO_VERSION=v1.4.1 bash -c "$(curl -sSL https://raw.githubusercontent.com/delfosti-infra/oraculo-cli/main/install.sh)"
 ```
 
 **Cambiar la carpeta de instalación** (por defecto `~/.local/bin`, en Windows `%LOCALAPPDATA%\Programs\Oraculo`)

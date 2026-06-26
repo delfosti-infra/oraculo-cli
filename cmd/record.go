@@ -25,8 +25,6 @@ var recordFreshFlag bool
 var recordPlatformFlag string
 var recordAppFlag string
 var recordAppActivityFlag string
-var recordPermissionsFlag []string
-var recordGeolocationFlag string
 
 var recordCmd = &cobra.Command{
 	Use:   "record <nombre>",
@@ -95,10 +93,7 @@ var recordCmd = &cobra.Command{
 
 		huKeys := resolveHUsForRecord(recordHUFlag)
 
-		permissions, geo, err := resolveBrowserPermissions(recordPermissionsFlag, recordGeolocationFlag)
-		if err != nil {
-			return ui.Fail("%s", err)
-		}
+		ipGeo, _ := resolveGeolocationByIP()
 
 		if !recordFreshFlag && looksLikeLoginFlow(slug) {
 			ui.PrintWarning("Parece que vas a grabar el flow de login. Con la sesión guardada el browser abre ya autenticado y el login no queda grabado.")
@@ -176,7 +171,7 @@ var recordCmd = &cobra.Command{
 			absScreenshotsDir = screenshotsDir
 		}
 
-		instrumented, stepCount := instrumentSpec(string(specContent), absScreenshotsDir)
+		instrumented, stepCount := instrumentSpec(injectPermissionDetection(string(specContent)), absScreenshotsDir)
 
 		if err := os.WriteFile(specPath, []byte(instrumented), 0644); err != nil {
 			return ui.Fail("No se pudo escribir spec instrumentado: %s", err)
@@ -194,7 +189,7 @@ var recordCmd = &cobra.Command{
 
 		absSpecPath, _ := filepath.Abs(specPath)
 		configPath := filepath.Join(outputDir, "playwright.config.ts")
-		configContent := buildPlaywrightConfig(absSpecPath, authStatePath, stepCount, permissions, geo)
+		configContent := buildPlaywrightConfig(absSpecPath, authStatePath, stepCount, allowedBrowserPermissionList(), ipGeo)
 		if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
 			spinner.Stop()
 			return ui.Fail("No se pudo escribir config temporal: %s", err)
@@ -246,6 +241,18 @@ var recordCmd = &cobra.Command{
 			fmt.Println(string(testOutput))
 		}
 
+		detectedPermissions := parseDetectedPermissions(string(testOutput))
+		var geo *geolocation
+		if sliceContains(detectedPermissions, geolocationPermission) {
+			geo = ipGeo
+			if geo == nil {
+				ui.PrintHint("El flujo usa geolocalización pero no se pudo resolver la ubicación por IP. Defínela en Ajustes › Permisos del proyecto.")
+			}
+		}
+		if len(detectedPermissions) > 0 {
+			ui.PrintStep(fmt.Sprintf("Permisos detectados: %s", strings.Join(detectedPermissions, ", ")))
+		}
+
 		platform := normalizePlatform(recordPlatformFlag)
 		if recordPlatformFlag != "" && platform == "" {
 			ui.PrintWarning(fmt.Sprintf(
@@ -254,12 +261,12 @@ var recordCmd = &cobra.Command{
 			))
 		}
 
-		if len(huKeys) > 0 || usesAuthSession || platform != "" || len(permissions) > 0 || geo != nil {
+		if len(huKeys) > 0 || usesAuthSession || platform != "" || len(detectedPermissions) > 0 || geo != nil {
 			meta := flowMeta{
 				JiraIssueKeys:      huKeys,
 				UsesAuthSession:    usesAuthSession,
 				Platform:           platform,
-				GrantedPermissions: permissions,
+				GrantedPermissions: detectedPermissions,
 				Geolocation:        geo,
 			}
 			if err := saveFlowMeta(e2eDir, slug, meta); err != nil {
@@ -615,7 +622,8 @@ export default defineConfig({
     headless: true,
     actionTimeout: 10_000,
     navigationTimeout: 20_000,
-    ignoreHTTPSErrors: true,%s
+    ignoreHTTPSErrors: true,
+    launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] },%s
   },
 });
 `, specDir, specName, timeoutMs, useExtras)
@@ -720,18 +728,6 @@ func registerRecordFlags(cmd *cobra.Command) {
 		"app-activity",
 		"",
 		"(móvil, Android) activity de arranque, si la app la requiere.",
-	)
-	cmd.Flags().StringSliceVar(
-		&recordPermissionsFlag,
-		"permissions",
-		nil,
-		"Permisos de navegador que el flujo necesita: geolocation, notifications, camera, microphone, clipboard-read, clipboard-write (ej. --permissions=geolocation,camera).",
-	)
-	cmd.Flags().StringVar(
-		&recordGeolocationFlag,
-		"geolocation",
-		"",
-		"Coordenadas para el permiso geolocation, formato lat,lng (ej. --geolocation=-12.0464,-77.0428).",
 	)
 }
 
