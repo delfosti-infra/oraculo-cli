@@ -25,6 +25,7 @@ var recordFreshFlag bool
 var recordPlatformFlag string
 var recordAppFlag string
 var recordAppActivityFlag string
+var recordLegacyFlag bool
 
 var recordCmd = &cobra.Command{
 	Use:   "record <nombre>",
@@ -108,6 +109,21 @@ var recordCmd = &cobra.Command{
 			if authStatePath != "" {
 				defer os.Remove(authStatePath)
 			}
+		}
+
+		if !recordLegacyFlag {
+			ui.PrintStep("Grabando en vivo — hacé los clicks y cerrá el browser (captura por acción, sin re-ejecutar)")
+			n, lerr := runLiveRecord(e2eDir, liveRecordOpts{
+				specPath:       specPath,
+				screenshotsDir: screenshotsDir,
+				baseURL:        config.BaseURL,
+				authStatePath:  authStatePath,
+				geo:            ipGeo,
+			})
+			if lerr == nil {
+				return finishLiveRecord(e2eDir, slug, specPath, n, huKeys, usesAuthSession)
+			}
+			ui.PrintWarning("Captura en vivo no disponible (" + lerr.Error() + "). Uso el método clásico (codegen + replay).")
 		}
 
 		ui.PrintStep(fmt.Sprintf("Abriendo codegen contra %s", config.BaseURL))
@@ -728,6 +744,12 @@ func registerRecordFlags(cmd *cobra.Command) {
 		"app-activity",
 		"",
 		"(móvil, Android) activity de arranque, si la app la requiere.",
+	)
+	cmd.Flags().BoolVar(
+		&recordLegacyFlag,
+		"legacy",
+		false,
+		"Usa el método clásico (codegen + re-ejecución) en vez de la captura en vivo.",
 	)
 }
 
