@@ -1,8 +1,14 @@
 // Recorder en vivo de Oráculo (Diseño A).
-// Reemplaza el `playwright codegen` + replay: usa el recorder de Playwright
-// (context._enableRecorder) y captura un screenshot EN VIVO por cada acción que el
-// usuario ejecuta (eventSink.actionAdded), en el estado real y autenticado — sin replay.
-// Lo invoca cmd/record.go vía `node`. Config por env vars (ORACULO_*).
+// Reemplaza el "codegen + re-ejecutar el spec para sacar screenshots" (que tragaba los
+// fallos de selector y capturaba la misma pantalla en todos los pasos) por capturar EN
+// VIVO: usa el recorder de Playwright (context._enableRecorder, el mismo que codegen) que
+// escribe el spec INCREMENTALMENTE — una línea por acción — y toma un screenshot apenas
+// aparece cada acción nueva, en el estado real y autenticado. SIN replay.
+//
+// No usamos el eventSink del recorder (es API privada y no dispara en todas las versiones
+// de Playwright); en su lugar observamos el archivo del spec, que es comportamiento estable
+// y version-independiente (codegen --output siempre lo escribe). Lo invoca cmd/record.go
+// vía `node`. Config por env vars (ORACULO_*).
 import { chromium } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,6 +37,11 @@ if (!SPEC_PATH || !SHOTS_DIR || !BASE_URL) {
 }
 
 fs.mkdirSync(SHOTS_DIR, { recursive: true });
+try {
+  fs.unlinkSync(SPEC_PATH);
+} catch {
+  // no existía, ok
+}
 
 const browser = await chromium.launch({
   headless: HEADLESS,
@@ -50,50 +61,65 @@ if (GEO && typeof GEO.lat === 'number' && typeof GEO.lng === 'number') {
 
 const context = await browser.newContext(contextOptions);
 
-let step = 0;
-let capturing = Promise.resolve();
+// La página donde el usuario está actuando (se actualiza con popups/tabs nuevos).
+let activePage = null;
+context.on('page', (p) => {
+  activePage = p;
+});
 
-const capture = (page, n) => {
-  capturing = capturing.then(async () => {
-    try {
-      await page.waitForLoadState('domcontentloaded').catch(() => {});
-      await page.waitForTimeout(120);
-      await page.screenshot({
-        path: path.join(SHOTS_DIR, `step-${n}.png`),
-        fullPage: false,
-      });
-    } catch {
-      // una captura fallida no debe romper la grabación
-    }
-  });
-};
-
-// context._enableRecorder es la misma API interna que usa `playwright codegen`.
-// El eventSink emite actionAdded/actionUpdated por cada acción del usuario, con la
-// `page` donde ocurrió — capturamos ahí, en el estado real (no en un replay).
-await context._enableRecorder(
-  {
-    language: 'playwright-test',
-    mode: 'recording',
-    outputFile: SPEC_PATH,
-    handleSIGINT: false,
-  },
-  {
-    actionAdded: (page) => {
-      step += 1;
-      capture(page, step);
-    },
-    actionUpdated: (page) => {
-      // misma acción refinándose (ej: fill mientras se tipea) → re-captura el paso actual
-      if (step > 0) capture(page, step);
-    },
-  },
-);
+// El recorder escribe el spec; arrancamos la grabación (sin eventSink).
+await context._enableRecorder({
+  language: 'playwright-test',
+  mode: 'recording',
+  outputFile: SPEC_PATH,
+  handleSIGINT: false,
+});
 
 const page = await context.newPage();
-await page.goto(BASE_URL).catch(() => {});
+activePage = page;
+if (BASE_URL) await page.goto(BASE_URL).catch(() => {});
+
+// Cuenta las líneas de acción del spec (una por acción del usuario).
+const ACTION_RE = /^\s*await\s+\S.*\.(goto|click|dblclick|fill|press|check|uncheck|selectOption|setInputFiles|tap|hover|focus|setChecked|clear)\(/;
+const countActions = (txt) => txt.split('\n').filter((l) => ACTION_RE.test(l)).length;
+
+let lastCount = 0;
+let step = 0;
+let queue = Promise.resolve();
+
+const captureNew = () => {
+  let txt = '';
+  try {
+    txt = fs.readFileSync(SPEC_PATH, 'utf8');
+  } catch {
+    return;
+  }
+  const current = countActions(txt);
+  while (lastCount < current) {
+    lastCount += 1;
+    step += 1;
+    const n = step;
+    const pageAtAction = activePage;
+    queue = queue.then(async () => {
+      try {
+        await pageAtAction.waitForLoadState('domcontentloaded').catch(() => {});
+        await pageAtAction.waitForTimeout(180);
+        await pageAtAction.screenshot({
+          path: path.join(SHOTS_DIR, `step-${n}.png`),
+          fullPage: false,
+        });
+      } catch {
+        // una captura fallida no debe romper la grabación
+      }
+    });
+  }
+};
+
+const poll = setInterval(captureNew, 200);
 
 await new Promise((resolve) => browser.on('disconnected', resolve));
-await capturing;
+clearInterval(poll);
+captureNew();
+await queue;
 console.log(`ORACULO_RECORDER_OK: ${step}`);
 process.exit(0);
