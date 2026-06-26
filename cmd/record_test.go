@@ -121,14 +121,33 @@ test('t', async ({ page }) => {
 }
 
 func TestBuildPlaywrightConfig_TimeoutScalesWithSteps(t *testing.T) {
-	short := buildPlaywrightConfig("/tmp/x.spec.ts", "", 0)
+	short := buildPlaywrightConfig("/tmp/x.spec.ts", "", 0, nil, nil)
 	if !strings.Contains(short, "timeout: 60000,") {
 		t.Errorf("sin pasos instrumentados debe conservar el base de 60s:\n%s", short)
 	}
 
-	long := buildPlaywrightConfig("/tmp/x.spec.ts", "", 80)
+	long := buildPlaywrightConfig("/tmp/x.spec.ts", "", 80, nil, nil)
 	if !strings.Contains(long, "timeout: 380000,") {
 		t.Errorf("con 80 pasos el timeout debe ser 60s + 80×4s = 380s:\n%s", long)
+	}
+}
+
+func TestBuildPlaywrightConfig_PermissionsAndGeolocation(t *testing.T) {
+	cfg := buildPlaywrightConfig(
+		"/tmp/x.spec.ts", "", 0,
+		[]string{"geolocation", "camera"},
+		&geolocation{Lat: -12.0464, Lng: -77.0428},
+	)
+	if !strings.Contains(cfg, `permissions: ["geolocation", "camera"],`) {
+		t.Errorf("debe declarar los permisos en use:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "geolocation: { latitude: -12.0464, longitude: -77.0428 },") {
+		t.Errorf("debe declarar las coordenadas en use:\n%s", cfg)
+	}
+
+	bare := buildPlaywrightConfig("/tmp/x.spec.ts", "", 0, nil, nil)
+	if strings.Contains(bare, "permissions:") || strings.Contains(bare, "geolocation:") {
+		t.Errorf("sin permisos no debe emitir permissions/geolocation:\n%s", bare)
 	}
 }
 

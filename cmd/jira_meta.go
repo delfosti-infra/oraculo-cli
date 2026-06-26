@@ -14,9 +14,11 @@ import (
 )
 
 type flowMeta struct {
-	JiraIssueKeys   []string `json:"jiraIssueKeys,omitempty"`
-	UsesAuthSession bool     `json:"usesAuthSession,omitempty"`
-	Platform        string   `json:"platform,omitempty"`
+	JiraIssueKeys      []string     `json:"jiraIssueKeys,omitempty"`
+	UsesAuthSession    bool         `json:"usesAuthSession,omitempty"`
+	Platform           string       `json:"platform,omitempty"`
+	GrantedPermissions []string     `json:"grantedPermissions,omitempty"`
+	Geolocation        *geolocation `json:"geolocation,omitempty"`
 }
 
 func metaPath(e2eDir, slug string) string {

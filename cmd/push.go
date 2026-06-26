@@ -339,6 +339,13 @@ func pushFlow(client *http.Client, config *types.Config, token, e2eDir, slug str
 	if meta.Platform != "" {
 		_ = writer.WriteField("platform", meta.Platform)
 	}
+	for _, p := range meta.GrantedPermissions {
+		_ = writer.WriteField("grantedPermissions", p)
+	}
+	if meta.Geolocation != nil {
+		_ = writer.WriteField("geolocationLat", strconv.FormatFloat(meta.Geolocation.Lat, 'f', -1, 64))
+		_ = writer.WriteField("geolocationLng", strconv.FormatFloat(meta.Geolocation.Lng, 'f', -1, 64))
+	}
 
 	for _, sp := range screenshots {
 		file, err := os.Open(sp)
@@ -391,6 +398,9 @@ func pushFlow(client *http.Client, config *types.Config, token, e2eDir, slug str
 	detail := fmt.Sprintf("%d screenshots subidas", len(screenshots))
 	if len(meta.JiraIssueKeys) > 0 {
 		detail = fmt.Sprintf("%s · %d HU(s) linkeadas", detail, len(meta.JiraIssueKeys))
+	}
+	if len(meta.GrantedPermissions) > 0 {
+		detail = fmt.Sprintf("%s · %d permiso(s)", detail, len(meta.GrantedPermissions))
 	}
 	return flow.RefId, detail, nil
 }

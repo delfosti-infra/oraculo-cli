@@ -25,6 +25,8 @@ var recordFreshFlag bool
 var recordPlatformFlag string
 var recordAppFlag string
 var recordAppActivityFlag string
+var recordPermissionsFlag []string
+var recordGeolocationFlag string
 
 var recordCmd = &cobra.Command{
 	Use:   "record <nombre>",
@@ -92,6 +94,11 @@ var recordCmd = &cobra.Command{
 		}
 
 		huKeys := resolveHUsForRecord(recordHUFlag)
+
+		permissions, geo, err := resolveBrowserPermissions(recordPermissionsFlag, recordGeolocationFlag)
+		if err != nil {
+			return ui.Fail("%s", err)
+		}
 
 		if !recordFreshFlag && looksLikeLoginFlow(slug) {
 			ui.PrintWarning("Parece que vas a grabar el flow de login. Con la sesión guardada el browser abre ya autenticado y el login no queda grabado.")
@@ -187,7 +194,7 @@ var recordCmd = &cobra.Command{
 
 		absSpecPath, _ := filepath.Abs(specPath)
 		configPath := filepath.Join(outputDir, "playwright.config.ts")
-		configContent := buildPlaywrightConfig(absSpecPath, authStatePath, stepCount)
+		configContent := buildPlaywrightConfig(absSpecPath, authStatePath, stepCount, permissions, geo)
 		if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
 			spinner.Stop()
 			return ui.Fail("No se pudo escribir config temporal: %s", err)
@@ -247,11 +254,13 @@ var recordCmd = &cobra.Command{
 			))
 		}
 
-		if len(huKeys) > 0 || usesAuthSession || platform != "" {
+		if len(huKeys) > 0 || usesAuthSession || platform != "" || len(permissions) > 0 || geo != nil {
 			meta := flowMeta{
-				JiraIssueKeys:   huKeys,
-				UsesAuthSession: usesAuthSession,
-				Platform:        platform,
+				JiraIssueKeys:      huKeys,
+				UsesAuthSession:    usesAuthSession,
+				Platform:           platform,
+				GrantedPermissions: permissions,
+				Geolocation:        geo,
 			}
 			if err := saveFlowMeta(e2eDir, slug, meta); err != nil {
 				ui.PrintWarning(fmt.Sprintf("No se pudo guardar el meta del flow: %s", err))
@@ -585,7 +594,7 @@ const (
 	replayPerStepTimeoutMs = 4_000
 )
 
-func buildPlaywrightConfig(absSpecPath, authStatePath string, stepCount int) string {
+func buildPlaywrightConfig(absSpecPath, authStatePath string, stepCount int, permissions []string, geo *geolocation) string {
 	specDir := filepath.Dir(absSpecPath)
 	specName := filepath.Base(absSpecPath)
 	timeoutMs := replayBaseTimeoutMs + stepCount*replayPerStepTimeoutMs
@@ -593,6 +602,7 @@ func buildPlaywrightConfig(absSpecPath, authStatePath string, stepCount int) str
 	if authStatePath != "" {
 		storageLine = fmt.Sprintf("\n    storageState: %q,", authStatePath)
 	}
+	useExtras := storageLine + renderPermissionsUseBlock(permissions, geo)
 	return fmt.Sprintf(`import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
@@ -608,7 +618,7 @@ export default defineConfig({
     ignoreHTTPSErrors: true,%s
   },
 });
-`, specDir, specName, timeoutMs, storageLine)
+`, specDir, specName, timeoutMs, useExtras)
 }
 
 func loadAuthSessionForRecord(config *types.Config) (string, bool) {
@@ -710,6 +720,18 @@ func registerRecordFlags(cmd *cobra.Command) {
 		"app-activity",
 		"",
 		"(móvil, Android) activity de arranque, si la app la requiere.",
+	)
+	cmd.Flags().StringSliceVar(
+		&recordPermissionsFlag,
+		"permissions",
+		nil,
+		"Permisos de navegador que el flujo necesita: geolocation, notifications, camera, microphone, clipboard-read, clipboard-write (ej. --permissions=geolocation,camera).",
+	)
+	cmd.Flags().StringVar(
+		&recordGeolocationFlag,
+		"geolocation",
+		"",
+		"Coordenadas para el permiso geolocation, formato lat,lng (ej. --geolocation=-12.0464,-77.0428).",
 	)
 }
 
