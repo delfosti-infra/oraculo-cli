@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 )
+
+var errLiveRecorderEmpty = errors.New("no se registró ninguna acción antes de cerrar el navegador")
 
 type liveRecordOpts struct {
 	specPath       string
@@ -71,7 +74,7 @@ func runLiveRecord(e2eDir string, opts liveRecordOpts) (int, error) {
 
 	n := countScreenshots(opts.screenshotsDir)
 	if n == 0 {
-		return 0, fmt.Errorf("no se capturó ninguna screenshot (¿cerraste sin grabar?)")
+		return 0, errLiveRecorderEmpty
 	}
 	return n, nil
 }

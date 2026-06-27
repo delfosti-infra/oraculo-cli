@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -122,6 +123,11 @@ var recordCmd = &cobra.Command{
 			})
 			if lerr == nil {
 				return finishLiveRecord(e2eDir, slug, specPath, n, huKeys, usesAuthSession)
+			}
+			if errors.Is(lerr, errLiveRecorderEmpty) {
+				return ui.Fail(
+					"No se registró ninguna acción. Hacé al menos un click o llená un campo antes de cerrar el navegador y reintentá `oraculo record`. No reabrimos codegen para no duplicar la grabación.",
+				)
 			}
 			ui.PrintWarning("Captura en vivo no disponible (" + lerr.Error() + "). Uso el método clásico (codegen + replay).")
 		}
