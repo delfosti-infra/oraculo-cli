@@ -1,14 +1,3 @@
-// Recorder en vivo de Oráculo (Diseño A).
-// Reemplaza el "codegen + re-ejecutar el spec para sacar screenshots" (que tragaba los
-// fallos de selector y capturaba la misma pantalla en todos los pasos) por capturar EN
-// VIVO: usa el recorder de Playwright (context._enableRecorder, el mismo que codegen) que
-// escribe el spec INCREMENTALMENTE — una línea por acción — y toma un screenshot apenas
-// aparece cada acción nueva, en el estado real y autenticado. SIN replay.
-//
-// No usamos el eventSink del recorder (es API privada y no dispara en todas las versiones
-// de Playwright); en su lugar observamos el archivo del spec, que es comportamiento estable
-// y version-independiente (codegen --output siempre lo escribe). Lo invoca cmd/record.go
-// vía `node`. Config por env vars (ORACULO_*).
 import { chromium } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -40,7 +29,7 @@ fs.mkdirSync(SHOTS_DIR, { recursive: true });
 try {
   fs.unlinkSync(SPEC_PATH);
 } catch {
-  // no existía, ok
+  /* */
 }
 
 const browser = await chromium.launch({
@@ -61,13 +50,28 @@ if (GEO && typeof GEO.lat === 'number' && typeof GEO.lng === 'number') {
 
 const context = await browser.newContext(contextOptions);
 
-// La página donde el usuario está actuando (se actualiza con popups/tabs nuevos).
 let activePage = null;
+let resolveDone;
+const done = new Promise((r) => {
+  resolveDone = r;
+});
+let finished = false;
+const finish = () => {
+  if (finished) return;
+  finished = true;
+  resolveDone();
+};
+
 context.on('page', (p) => {
   activePage = p;
+  p.on('close', () => {
+    const open = context.pages().filter((pg) => !pg.isClosed());
+    if (open.length === 0) finish();
+  });
 });
+browser.on('disconnected', finish);
+context.on('close', finish);
 
-// El recorder escribe el spec; arrancamos la grabación (sin eventSink).
 await context._enableRecorder({
   language: 'playwright-test',
   mode: 'recording',
@@ -79,7 +83,6 @@ const page = await context.newPage();
 activePage = page;
 if (BASE_URL) await page.goto(BASE_URL).catch(() => {});
 
-// Cuenta las líneas de acción del spec (una por acción del usuario).
 const ACTION_RE = /^\s*await\s+\S.*\.(goto|click|dblclick|fill|press|check|uncheck|selectOption|setInputFiles|tap|hover|focus|setChecked|clear)\(/;
 const countActions = (txt) => txt.split('\n').filter((l) => ACTION_RE.test(l)).length;
 
@@ -109,7 +112,7 @@ const captureNew = () => {
           fullPage: false,
         });
       } catch {
-        // una captura fallida no debe romper la grabación
+        /* */
       }
     });
   }
@@ -117,9 +120,10 @@ const captureNew = () => {
 
 const poll = setInterval(captureNew, 200);
 
-await new Promise((resolve) => browser.on('disconnected', resolve));
+await done;
 clearInterval(poll);
 captureNew();
 await queue;
 console.log(`ORACULO_RECORDER_OK: ${step}`);
+await browser.close().catch(() => {});
 process.exit(0);
