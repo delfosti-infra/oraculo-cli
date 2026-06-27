@@ -67,8 +67,17 @@ func runUpdate(current string) error {
 	url := fmt.Sprintf("%s/%s/%s", updateReleaseBaseURL, latest, asset)
 
 	ui.PrintStep("Descargando " + asset + "…")
-	if err := downloadAndReplace(url, exePath); err != nil {
+	deferred, err := downloadAndReplace(url, exePath)
+	if err != nil {
 		return ui.Fail("No se pudo instalar %s: %s", latest, err)
+	}
+
+	if deferred {
+		ui.PrintSuccess(fmt.Sprintf(
+			"%s descargada. El binario estaba en uso: cierra esta terminal para completar la instalación y luego verifica con: oraculo --version",
+			latest,
+		))
+		return nil
 	}
 
 	ui.PrintSuccess(fmt.Sprintf("Actualizado a %s. Verifica con: oraculo --version", latest))
@@ -94,54 +103,71 @@ func releaseAssetName() string {
 	return name
 }
 
-func downloadAndReplace(url, exePath string) error {
+func downloadAndReplace(url, exePath string) (bool, error) {
 	client := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := client.Get(url)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("descarga falló (HTTP %d) en %s", resp.StatusCode, url)
+		return false, fmt.Errorf("descarga falló (HTTP %d) en %s", resp.StatusCode, url)
 	}
 
 	dir := filepath.Dir(exePath)
 	tmp, err := os.CreateTemp(dir, ".oraculo-update-*")
 	if err != nil {
-		return fmt.Errorf("no pude crear archivo temporal en %s: %w", dir, err)
+		return false, fmt.Errorf("no pude crear archivo temporal en %s: %w", dir, err)
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
 
 	if _, err := io.Copy(tmp, resp.Body); err != nil {
 		tmp.Close()
-		return fmt.Errorf("no pude escribir la descarga: %w", err)
+		return false, fmt.Errorf("no pude escribir la descarga: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return false, err
 	}
 	if err := os.Chmod(tmpPath, 0o755); err != nil {
-		return err
+		return false, err
 	}
 
 	if runtime.GOOS == "windows" {
-		old := exePath + ".old"
-		_ = os.Remove(old)
-		if err := os.Rename(exePath, old); err != nil {
-			return fmt.Errorf("no pude apartar el binario actual: %w", err)
-		}
-		if err := os.Rename(tmpPath, exePath); err != nil {
-			_ = os.Rename(old, exePath)
-			return fmt.Errorf("no pude colocar el binario nuevo: %w", err)
-		}
-		_ = os.Remove(old)
-		return nil
+		return replaceWindowsBinary(exePath, tmpPath)
 	}
 
 	if err := os.Rename(tmpPath, exePath); err != nil {
-		return fmt.Errorf("no pude reemplazar el binario: %w", err)
+		return false, fmt.Errorf("no pude reemplazar el binario: %w", err)
 	}
-	return nil
+	return false, nil
+}
+
+func replaceWindowsBinary(exePath, tmpPath string) (bool, error) {
+	old := exePath + ".old"
+	_ = os.Remove(old)
+
+	var renameErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		if renameErr = os.Rename(exePath, old); renameErr == nil {
+			break
+		}
+		time.Sleep(time.Duration(200*(attempt+1)) * time.Millisecond)
+	}
+
+	if renameErr != nil {
+		if deferErr := deferWindowsSwap(exePath, tmpPath); deferErr != nil {
+			return false, fmt.Errorf("binario en uso (%v) y falló el reemplazo diferido: %w", renameErr, deferErr)
+		}
+		return true, nil
+	}
+
+	if err := os.Rename(tmpPath, exePath); err != nil {
+		_ = os.Rename(old, exePath)
+		return false, fmt.Errorf("no pude colocar el binario nuevo: %w", err)
+	}
+	_ = os.Remove(old)
+	return false, nil
 }
 
 func fetchLatestCLIVersion() (string, error) {
