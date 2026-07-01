@@ -27,7 +27,9 @@ type capturedStorageState struct {
 	} `json:"origins"`
 }
 
-const authCaptureScript = `(async () => {
+const authCaptureScript = `const readline = require('readline');
+
+(async () => {
   const url = process.argv[2];
   const out = process.argv[3];
   if (!url || !out) { console.error('faltan argumentos url/out'); process.exit(1); }
@@ -57,10 +59,19 @@ const authCaptureScript = `(async () => {
   const page = await context.newPage();
   await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
 
-  const save = () => context.storageState({ path: out }).catch(() => {});
-  const timer = setInterval(save, 2000);
-  await new Promise((resolve) => browser.once('disconnected', resolve));
-  clearInterval(timer);
+  console.log('\n  >> Inicia sesion en el navegador. Cuando termines, vuelve a esta terminal y presiona ENTER (no cierres el navegador).\n');
+
+  const rl = readline.createInterface({ input: process.stdin });
+  await Promise.race([
+    new Promise((resolve) => rl.once('line', resolve)),
+    new Promise((resolve) => browser.once('disconnected', resolve)),
+  ]);
+  rl.close();
+
+  if (browser.isConnected()) {
+    await context.storageState({ path: out }).catch(() => {});
+    await browser.close().catch(() => {});
+  }
 })().catch((e) => { console.error(String((e && e.message) || e)); process.exit(1); });
 `
 
@@ -83,9 +94,9 @@ var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Captura y guarda la sesión autenticada del proyecto (storageState)",
 	Args:  cobra.NoArgs,
-	Long: "Abre un browser contra el base_url del proyecto: inicia sesión y ciérralo.\n" +
-		"Oráculo guarda la sesión (cookies + localStorage) cifrada en el core para\n" +
-		"que puedas grabar y correr flows ya autenticado, sin grabar el login.",
+	Long: "Abre un navegador contra el base_url del proyecto: inicia sesión y vuelve\n" +
+		"a la terminal a presionar ENTER. Oráculo guarda la sesión (cookies +\n" +
+		"localStorage) cifrada en el core para grabar/correr autenticado, sin login.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runAuthCapture()
 	},
@@ -113,7 +124,7 @@ func runAuthCapture() error {
 	ui.PrintHeader(
 		"AUTH",
 		"Captura la sesión del proyecto",
-		"Abre un browser; inicia sesión y ciérralo. La sesión queda cifrada para grabar/correr autenticado.",
+		"Abre un navegador; inicia sesión y presiona ENTER en la terminal. La sesión queda cifrada para grabar/correr autenticado.",
 	)
 
 	config, err := loadOraculoConfig()
@@ -162,7 +173,7 @@ func runAuthCapture() error {
 	}
 	defer cleanup()
 
-	ui.PrintStep(fmt.Sprintf("Abriendo Chrome contra %s — inicia sesión y cierra el navegador", config.BaseURL))
+	ui.PrintStep(fmt.Sprintf("Abriendo Chrome contra %s — inicia sesión y luego presiona ENTER aquí", config.BaseURL))
 	ui.PrintHint("Se abre tu Chrome real, sin marcas de automatización, para que el login de Google/GitHub no lo bloquee.")
 
 	runOpen := func() (string, error) {
@@ -198,7 +209,7 @@ func runAuthCapture() error {
 
 	stateData, err := os.ReadFile(tmpPath)
 	if err != nil || len(stateData) == 0 {
-		return ui.Fail("No se capturó la sesión. ¿Cerraste el browser sin loguearte?")
+		return ui.Fail("No se capturó la sesión. ¿Presionaste ENTER sin iniciar sesión, o cerraste el navegador antes de tiempo?")
 	}
 
 	var state capturedStorageState
@@ -213,7 +224,7 @@ func runAuthCapture() error {
 	if len(state.Cookies) == 0 && localStorageCount == 0 {
 		return ui.Fail(
 			"No se detectó ninguna sesión (0 cookies, 0 localStorage). " +
-				"¿Cerraste el browser sin iniciar sesión? Corre `oraculo auth` de nuevo e inicia sesión antes de cerrarlo.",
+				"¿Iniciaste sesión antes de presionar ENTER? Corre `oraculo auth` de nuevo, inicia sesión y luego presiona ENTER.",
 		)
 	}
 
