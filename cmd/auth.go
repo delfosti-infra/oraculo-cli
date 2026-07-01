@@ -27,6 +27,58 @@ type capturedStorageState struct {
 	} `json:"origins"`
 }
 
+const authCaptureScript = `(async () => {
+  const url = process.argv[2];
+  const out = process.argv[3];
+  if (!url || !out) { console.error('faltan argumentos url/out'); process.exit(1); }
+
+  let chromium;
+  try {
+    ({ chromium } = require(require.resolve('@playwright/test', { paths: [process.cwd()] })));
+  } catch (e) {
+    console.error('MODULE_NOT_FOUND @playwright/test');
+    process.exit(3);
+  }
+
+  const launchOpts = {
+    headless: false,
+    ignoreDefaultArgs: ['--enable-automation'],
+    args: ['--disable-blink-features=AutomationControlled'],
+  };
+
+  let browser;
+  try {
+    browser = await chromium.launch(Object.assign({ channel: 'chrome' }, launchOpts));
+  } catch (e) {
+    browser = await chromium.launch(launchOpts);
+  }
+
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
+
+  const save = () => context.storageState({ path: out }).catch(() => {});
+  const timer = setInterval(save, 2000);
+  await new Promise((resolve) => browser.once('disconnected', resolve));
+  clearInterval(timer);
+})().catch((e) => { console.error(String((e && e.message) || e)); process.exit(1); });
+`
+
+func writeAuthCaptureScript() (string, func(), error) {
+	noop := func() {}
+	f, err := os.CreateTemp("", "oraculo-auth-capture-*.cjs")
+	if err != nil {
+		return "", noop, fmt.Errorf("crear script de captura: %w", err)
+	}
+	if _, err := f.WriteString(authCaptureScript); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", noop, fmt.Errorf("escribir script de captura: %w", err)
+	}
+	f.Close()
+	return f.Name(), func() { os.Remove(f.Name()) }, nil
+}
+
 var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Captura y guarda la sesión autenticada del proyecto (storageState)",
@@ -91,11 +143,31 @@ func runAuthCapture() error {
 	tmp.Close()
 	defer os.Remove(tmpPath)
 
-	ui.PrintStep(fmt.Sprintf("Abriendo browser contra %s — inicia sesión y ciérralo", config.BaseURL))
+	if !playwrightTestResolvable() {
+		ui.PrintWarning("Tu proyecto no tiene @playwright/test, necesario para capturar la sesión.")
+		if !ui.PromptYesNo("¿Lo instalo ahora con npm install -D @playwright/test? [S/n]", true) {
+			printPlaywrightTestModuleHint()
+			return ui.ErrAlreadyReported
+		}
+		if err := installPlaywrightTestPackage(); err != nil || !playwrightTestResolvable() {
+			printPlaywrightTestModuleHint()
+			return ui.ErrAlreadyReported
+		}
+		ui.PrintStep("@playwright/test instalado — sigo con la captura")
+	}
+
+	scriptPath, cleanup, err := writeAuthCaptureScript()
+	if err != nil {
+		return ui.Fail("%s", err)
+	}
+	defer cleanup()
+
+	ui.PrintStep(fmt.Sprintf("Abriendo Chrome contra %s — inicia sesión y cierra el navegador", config.BaseURL))
+	ui.PrintHint("Se abre tu Chrome real, sin marcas de automatización, para que el login de Google/GitHub no lo bloquee.")
 
 	runOpen := func() (string, error) {
 		var stderr bytes.Buffer
-		open := exec.Command("npx", playwrightNpxArgs("open", "--save-storage="+tmpPath, config.BaseURL)...)
+		open := exec.Command("node", scriptPath, config.BaseURL, tmpPath)
 		open.Stdin = os.Stdin
 		open.Stdout = os.Stdout
 		open.Stderr = io.MultiWriter(os.Stderr, &stderr)
@@ -117,7 +189,11 @@ func runAuthCapture() error {
 			printPlaywrightInstallHint("oraculo auth")
 			return ui.ErrAlreadyReported
 		}
-		return ui.Fail("Playwright no terminó bien: %s", openErr)
+		if strings.Contains(openStderr, "MODULE_NOT_FOUND") {
+			printPlaywrightTestModuleHint()
+			return ui.ErrAlreadyReported
+		}
+		return ui.Fail("El navegador de captura no terminó bien: %s", openErr)
 	}
 
 	stateData, err := os.ReadFile(tmpPath)
