@@ -63,14 +63,23 @@ const authCaptureScript = `const fs = require('fs');
     chain = chain.then(async () => { try { latest = await context.storageState(); } catch (e) {} });
   };
 
+  let openPages = 0;
+  let resolveDone;
+  const allClosed = new Promise((resolve) => { resolveDone = resolve; });
+
   const attached = new WeakSet();
   const attach = (p) => {
     if (attached.has(p)) return;
     attached.add(p);
+    openPages++;
     p.on('domcontentloaded', capture);
     p.on('load', capture);
     p.on('framenavigated', (f) => { if (f === p.mainFrame()) capture(); });
-    p.on('close', capture);
+    p.on('close', () => {
+      capture();
+      openPages--;
+      if (openPages <= 0) resolveDone();
+    });
   };
   context.on('page', attach);
 
@@ -78,9 +87,13 @@ const authCaptureScript = `const fs = require('fs');
   attach(page);
   await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
 
-  await new Promise((resolve) => browser.once('disconnected', resolve));
+  await Promise.race([
+    allClosed,
+    new Promise((resolve) => browser.once('disconnected', resolve)),
+  ]);
   await chain.catch(() => {});
   if (latest) { try { fs.writeFileSync(out, JSON.stringify(latest)); } catch (e) {} }
+  await browser.close().catch(() => {});
 })().catch((e) => { console.error(String((e && e.message) || e)); process.exit(1); });
 `
 
