@@ -638,6 +638,7 @@ func cleanRecordedSpec(spec string) string {
 const (
 	replayBaseTimeoutMs    = 60_000
 	replayPerStepTimeoutMs = 4_000
+	recordingBrowserLocale = "es-PE"
 )
 
 func buildPlaywrightConfig(absSpecPath, authStatePath string, stepCount int, permissions []string, geo *geolocation) string {
@@ -659,13 +660,14 @@ export default defineConfig({
   workers: 1,
   use: {
     headless: true,
+    locale: %q,
     actionTimeout: 10_000,
     navigationTimeout: 20_000,
     ignoreHTTPSErrors: true,
     launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] },%s
   },
 });
-`, specDir, specName, timeoutMs, useExtras)
+`, specDir, specName, timeoutMs, recordingBrowserLocale, useExtras)
 }
 
 func loadAuthSessionForRecord(config *types.Config) (string, bool) {
@@ -704,7 +706,11 @@ func loadAuthSessionForRecord(config *types.Config) (string, bool) {
 	}
 	tmp.Close()
 
-	ui.PrintStep("Sesión del proyecto cargada — grabas ya autenticado (sin login)")
+	ui.PrintNotice(
+		"El navegador abrirá YA AUTENTICADO",
+		"Se cargó la sesión guardada del proyecto: no verás la pantalla de login.",
+		"Para grabar con navegador limpio (sin sesión) usa: oraculo record <nombre> --fresh",
+	)
 	ui.PrintHint("¿Este flow ES el login? Córtalo (Ctrl+C) y vuelve a correr con --fresh para grabar con navegador limpio.")
 	return tmp.Name(), true
 }

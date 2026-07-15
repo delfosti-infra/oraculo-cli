@@ -36,6 +36,9 @@ Para actualizar más adelante: `oraculo update`.
 oraculo login                        # autentícate contra el backoffice
 oraculo init                         # elige tu proyecto → crea oraculo.config.json
 oraculo auth                         # captura la sesión autenticada (storageState)
+                                     #   sitios con 2FA/OTP: resuelves el doble factor UNA vez
+                                     #   en ese navegador; la sesión se reusa hasta expirar
+                                     #   (detalle: sección "Sesión autenticada" en /docs del panel)
 oraculo record checkout --HU=KDP0-6  # graba un flow con Playwright codegen
 oraculo push                         # súbelo al backoffice
 ```

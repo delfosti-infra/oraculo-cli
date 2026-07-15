@@ -8,6 +8,7 @@ const SHOTS_DIR = env.ORACULO_SHOTS_DIR;
 const BASE_URL = env.ORACULO_BASE_URL;
 const AUTH_STATE = env.ORACULO_AUTH_STATE || undefined;
 const HEADLESS = env.ORACULO_HEADLESS === '1';
+const BROWSER_LOCALE = 'es-PE';
 
 const parseJson = (raw, fallback) => {
   if (!raw) return fallback;
@@ -40,7 +41,7 @@ const browser = await chromium.launch({
   ],
 });
 
-const contextOptions = { ignoreHTTPSErrors: true };
+const contextOptions = { ignoreHTTPSErrors: true, locale: BROWSER_LOCALE };
 if (AUTH_STATE) contextOptions.storageState = AUTH_STATE;
 if (PERMISSIONS) contextOptions.permissions = PERMISSIONS;
 if (GEO && typeof GEO.lat === 'number' && typeof GEO.lng === 'number') {

@@ -94,6 +94,21 @@ func PrintWarning(message string) {
 	fmt.Fprintf(os.Stderr, "  %s %s\n", warningStyle.Render("!"), labelStyle.Render(message))
 }
 
+// PrintNotice imprime un aviso destacado en caja (borde redondeado) para
+// información que el usuario NO debe pasar por alto, sin frenar el flujo.
+func PrintNotice(title string, lines ...string) {
+	body := headerStyle.Render(title)
+	for _, line := range lines {
+		body += "\n" + hintStyle.Render(line)
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorGold).
+		Padding(0, 2).
+		MarginLeft(2)
+	fmt.Println(boxStyle.Render(body))
+}
+
 func padRight(s string, width int) string {
 	if len(s) >= width {
 		return s
