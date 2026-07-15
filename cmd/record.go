@@ -198,7 +198,11 @@ var recordCmd = &cobra.Command{
 		if err := os.WriteFile(specPath, []byte(instrumented), 0644); err != nil {
 			return ui.Fail("No se pudo escribir spec instrumentado: %s", err)
 		}
+		recordingDiscarded := false
 		defer func() {
+			if recordingDiscarded {
+				return
+			}
 			_ = os.WriteFile(specPath, specContent, 0644)
 		}()
 
@@ -239,6 +243,19 @@ var recordCmd = &cobra.Command{
 		if screenshots == 0 {
 			ui.PrintError("No se capturaron screenshots. Output de Playwright:")
 			fmt.Println(string(testOutput))
+			return ui.ErrAlreadyReported
+		}
+
+		if total, distinct, hashErr := screenshotDistinctCount(screenshotsDir); hashErr == nil &&
+			replayScreenshotsLookBroken(total, distinct) {
+			recordingDiscarded = true
+			removeFlowArtifacts(e2eDir, slug)
+			ui.PrintError(fmt.Sprintf(
+				"El replay no reprodujo el flow: solo %d captura(s) distinta(s) de %d (la app quedó trabada en una pantalla).",
+				distinct, total,
+			))
+			ui.PrintHint("Se descartó la grabación para no subir capturas falsas. Vuelve a grabar con: oraculo record " + slug)
+			ui.PrintHint("Si la app requiere login, captura la sesión primero con: oraculo auth")
 			return ui.ErrAlreadyReported
 		}
 		ui.PrintStep(fmt.Sprintf("%d screenshot(s) en %s/", screenshots, screenshotsDir))
