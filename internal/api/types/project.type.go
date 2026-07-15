@@ -1,9 +1,10 @@
 package types
 
 type Project struct {
-	RefId   string `json:"refId"`
-	Name    string `json:"name"`
-	BaseURL string `json:"baseUrl"`
+	RefId     string  `json:"refId"`
+	Name      string  `json:"name"`
+	BaseURL   string  `json:"baseUrl"`
+	CITrigger *string `json:"ciTrigger"`
 }
 
 type PageableResponse[T any] struct {

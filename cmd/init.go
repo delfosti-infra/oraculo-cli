@@ -8,23 +8,17 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/delfosti/oraculo-cli/internal/api"
-	"github.com/delfosti/oraculo-cli/internal/api/types"
-	"github.com/delfosti/oraculo-cli/internal/ui"
+	"github.com/delfosti-infra/oraculo-cli/internal/api"
+	"github.com/delfosti-infra/oraculo-cli/internal/api/types"
+	appconfig "github.com/delfosti-infra/oraculo-cli/internal/config"
+	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
-
-type Config struct {
-	Project string `json:"project"`
-	RefId   string `json:"refId"`
-	BaseURL string `json:"base_url"`
-	APIURL  string `json:"api_url"`
-	E2EDir  string `json:"e2e_dir"`
-}
 
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Inicializa Oráculo en el proyecto actual",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ui.PrintHeader(
 			"INICIO",
@@ -33,19 +27,17 @@ var initCmd = &cobra.Command{
 		)
 
 		if _, err := os.Stat("oraculo.config.json"); err == nil {
-			ui.PrintError("Ya existe oraculo.config.json — el proyecto ya está inicializado.")
-			return nil
+			return ui.Fail("Ya existe oraculo.config.json — el proyecto ya está inicializado.")
 		}
 
-		config := Config{
-			APIURL: defaultAPIURL,
+		config := types.Config{
+			APIURL: appconfig.ResolveAPIURL("", ""),
 			E2EDir: "e2e",
 		}
 
 		if _, err := os.Stat("e2e"); os.IsNotExist(err) {
 			if err := os.Mkdir("e2e", 0755); err != nil {
-				ui.PrintError(fmt.Sprintf("No se pudo crear e2e/: %s", err))
-				return nil
+				return ui.Fail("No se pudo crear e2e/: %s", err)
 			}
 			ui.PrintStep("Carpeta e2e/ creada")
 		} else {
@@ -54,7 +46,7 @@ var initCmd = &cobra.Command{
 
 		if selected, err := selectProject(config.APIURL); err != nil {
 			ui.PrintWarning(err.Error())
-			ui.PrintWarning("Completá `refId` y `base_url` manualmente, o corré 'oraculo login' y reintentá 'oraculo init'.")
+			ui.PrintWarning("Completa `refId` y `base_url` manualmente, o corre 'oraculo login' y reintenta 'oraculo init'.")
 		} else {
 			config.Project = selected.Name
 			config.RefId = selected.RefId
@@ -64,20 +56,19 @@ var initCmd = &cobra.Command{
 
 		data, err := json.MarshalIndent(config, "", "  ")
 		if err != nil {
-			ui.PrintError(fmt.Sprintf("No se pudo generar la configuración: %s", err))
-			return nil
+			return ui.Fail("No se pudo generar la configuración: %s", err)
 		}
 
 		if err := os.WriteFile("oraculo.config.json", data, 0644); err != nil {
-			ui.PrintError(fmt.Sprintf("No se pudo crear oraculo.config.json: %s", err))
-			return nil
+			return ui.Fail("No se pudo crear oraculo.config.json: %s", err)
 		}
 		ui.PrintStep("oraculo.config.json generado")
 
 		if config.RefId != "" {
-			ui.PrintSuccess("Proyecto listo. Grabá un flow con 'oraculo record <nombre>' y publicá con 'oraculo push'.")
+			ui.PrintSuccess("Proyecto listo.")
+			ui.PrintHint("Siguiente: 'oraculo auth' para capturar tu sesión, luego 'oraculo record <nombre>'.")
 		} else {
-			ui.PrintSuccess("Config generada. Completá los campos faltantes y usá 'oraculo push'.")
+			ui.PrintSuccess("Config generada. Completa los campos faltantes y usa 'oraculo push'.")
 		}
 		return nil
 	},
@@ -88,7 +79,7 @@ func promptProjectSelection(projects []types.Project) *types.Project {
 	for i, p := range projects {
 		fmt.Printf("    %d) %s  ·  %s\n", i+1, p.Name, p.BaseURL)
 	}
-	fmt.Printf("  Elegí un proyecto [1-%d]: ", len(projects))
+	fmt.Printf("  Elige un proyecto [1-%d]: ", len(projects))
 
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
@@ -97,14 +88,14 @@ func promptProjectSelection(projects []types.Project) *types.Project {
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(line))
 	if err != nil || n < 1 || n > len(projects) {
-		ui.PrintWarning("Selección inválida — completá refId manualmente.")
+		ui.PrintWarning("Selección inválida — completa refId manualmente.")
 		return nil
 	}
 	return &projects[n-1]
 }
 
 func selectProject(apiURL string) (*types.Project, error) {
-	token, err := loadToken()
+	token, err := appconfig.LoadToken()
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +105,7 @@ func selectProject(apiURL string) (*types.Project, error) {
 		return nil, fmt.Errorf("no se pudieron listar los proyectos: %w", err)
 	}
 	if len(projects) == 0 {
-		return nil, fmt.Errorf("tu empresa todavía no tiene proyectos — creá uno en el backoffice")
+		return nil, fmt.Errorf("tu empresa todavía no tiene proyectos — crea uno en el backoffice")
 	}
 	selected := promptProjectSelection(projects)
 	if selected == nil {

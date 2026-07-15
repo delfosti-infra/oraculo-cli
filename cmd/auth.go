@@ -1,14 +1,17 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 
-	"github.com/delfosti/oraculo-cli/internal/api"
-	"github.com/delfosti/oraculo-cli/internal/ui"
+	"github.com/delfosti-infra/oraculo-cli/internal/api"
+	appconfig "github.com/delfosti-infra/oraculo-cli/internal/config"
+	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -17,10 +20,103 @@ var (
 	authExpiresInDaysFlag int
 )
 
+type capturedStorageState struct {
+	Cookies []json.RawMessage `json:"cookies"`
+	Origins []struct {
+		LocalStorage []json.RawMessage `json:"localStorage"`
+	} `json:"origins"`
+}
+
+const authCaptureScript = `const fs = require('fs');
+
+(async () => {
+  const url = process.argv[2];
+  const out = process.argv[3];
+  if (!url || !out) { console.error('faltan argumentos url/out'); process.exit(1); }
+
+  let chromium;
+  try {
+    ({ chromium } = require(require.resolve('@playwright/test', { paths: [process.cwd()] })));
+  } catch (e) {
+    console.error('MODULE_NOT_FOUND @playwright/test');
+    process.exit(3);
+  }
+
+  const launchOpts = {
+    headless: false,
+    ignoreDefaultArgs: ['--enable-automation'],
+    args: ['--disable-blink-features=AutomationControlled'],
+  };
+
+  let browser;
+  try {
+    browser = await chromium.launch(Object.assign({ channel: 'chrome' }, launchOpts));
+  } catch (e) {
+    browser = await chromium.launch(launchOpts);
+  }
+
+  const context = await browser.newContext();
+
+  let latest = null;
+  let chain = Promise.resolve();
+  const capture = () => {
+    chain = chain.then(async () => { try { latest = await context.storageState(); } catch (e) {} });
+  };
+
+  let openPages = 0;
+  let resolveDone;
+  const allClosed = new Promise((resolve) => { resolveDone = resolve; });
+
+  const attached = new WeakSet();
+  const attach = (p) => {
+    if (attached.has(p)) return;
+    attached.add(p);
+    openPages++;
+    p.on('domcontentloaded', capture);
+    p.on('load', capture);
+    p.on('framenavigated', (f) => { if (f === p.mainFrame()) capture(); });
+    p.on('close', () => {
+      capture();
+      openPages--;
+      if (openPages <= 0) resolveDone();
+    });
+  };
+  context.on('page', attach);
+
+  const page = await context.newPage();
+  attach(page);
+  await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
+
+  await Promise.race([
+    allClosed,
+    new Promise((resolve) => browser.once('disconnected', resolve)),
+  ]);
+  await chain.catch(() => {});
+  if (latest) { try { fs.writeFileSync(out, JSON.stringify(latest)); } catch (e) {} }
+  await browser.close().catch(() => {});
+})().catch((e) => { console.error(String((e && e.message) || e)); process.exit(1); });
+`
+
+func writeAuthCaptureScript() (string, func(), error) {
+	noop := func() {}
+	f, err := os.CreateTemp("", "oraculo-auth-capture-*.cjs")
+	if err != nil {
+		return "", noop, fmt.Errorf("crear script de captura: %w", err)
+	}
+	if _, err := f.WriteString(authCaptureScript); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", noop, fmt.Errorf("escribir script de captura: %w", err)
+	}
+	f.Close()
+	return f.Name(), func() { os.Remove(f.Name()) }, nil
+}
+
 var authCmd = &cobra.Command{
 	Use:   "auth",
 	Short: "Captura y guarda la sesión autenticada del proyecto (storageState)",
-	Long: "Abre un browser contra el base_url del proyecto: logueate y cerralo.\n" +
+	Args:  cobra.NoArgs,
+	Long: "Abre un navegador contra el base_url del proyecto: inicia sesión y ciérralo.\n" +
 		"Oráculo guarda la sesión (cookies + localStorage) cifrada en el core para\n" +
 		"que puedas grabar y correr flows ya autenticado, sin grabar el login.",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -31,6 +127,7 @@ var authCmd = &cobra.Command{
 var authStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Muestra el estado de la sesión guardada del proyecto",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runAuthStatus()
 	},
@@ -39,6 +136,7 @@ var authStatusCmd = &cobra.Command{
 var authClearCmd = &cobra.Command{
 	Use:   "clear",
 	Short: "Borra la sesión guardada del proyecto",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runAuthClear()
 	},
@@ -48,63 +146,108 @@ func runAuthCapture() error {
 	ui.PrintHeader(
 		"AUTH",
 		"Captura la sesión del proyecto",
-		"Abre un browser; logueate y cerralo. La sesión queda cifrada para grabar/correr autenticado.",
+		"Abre un navegador; inicia sesión y ciérralo. La sesión queda cifrada para grabar/correr autenticado.",
 	)
 
 	config, err := loadOraculoConfig()
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 	if config.BaseURL == "" {
-		ui.PrintError("Falta el campo `base_url` en oraculo.config.json.")
-		return nil
+		return ui.Fail("Falta el campo `base_url` en oraculo.config.json.")
 	}
 	if config.RefId == "" {
-		ui.PrintError("Falta el campo `refId` en oraculo.config.json. Corré 'oraculo init'.")
-		return nil
+		return ui.Fail("Falta el campo `refId` en oraculo.config.json. Corre 'oraculo init'.")
 	}
 	if config.APIURL == "" {
-		ui.PrintError("Falta el campo `api_url` en oraculo.config.json.")
-		return nil
+		return ui.Fail("Falta el campo `api_url` en oraculo.config.json.")
 	}
 
-	token, err := loadToken()
+	token, err := appconfig.LoadToken()
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 
 	tmp, err := os.CreateTemp("", "oraculo-auth-*.json")
 	if err != nil {
-		ui.PrintError(fmt.Sprintf("No se pudo crear archivo temporal: %s", err))
-		return nil
+		return ui.Fail("No se pudo crear archivo temporal: %s", err)
 	}
 	tmpPath := tmp.Name()
 	tmp.Close()
-	defer os.Remove(tmpPath) // el storageState es el secreto: borralo siempre
+	defer os.Remove(tmpPath)
 
-	ui.PrintStep(fmt.Sprintf("Abriendo browser contra %s — logueate y cerralo", config.BaseURL))
+	if !playwrightTestResolvable() {
+		ui.PrintWarning("Tu proyecto no tiene @playwright/test, necesario para capturar la sesión.")
+		if !ui.PromptYesNo("¿Lo instalo ahora con npm install -D @playwright/test? [S/n]", true) {
+			printPlaywrightTestModuleHint()
+			return ui.ErrAlreadyReported
+		}
+		if err := installPlaywrightTestPackage(); err != nil || !playwrightTestResolvable() {
+			printPlaywrightTestModuleHint()
+			return ui.ErrAlreadyReported
+		}
+		ui.PrintStep("@playwright/test instalado — sigo con la captura")
+	}
 
-	open := exec.Command("npx", "playwright", "open", "--save-storage="+tmpPath, config.BaseURL)
-	open.Stdin = os.Stdin
-	open.Stdout = os.Stdout
-	open.Stderr = os.Stderr
-	if err := open.Run(); err != nil {
-		ui.PrintError(fmt.Sprintf("Playwright no terminó bien: %s", err))
-		return nil
+	scriptPath, cleanup, err := writeAuthCaptureScript()
+	if err != nil {
+		return ui.Fail("%s", err)
+	}
+	defer cleanup()
+
+	ui.PrintStep(fmt.Sprintf("Abriendo Chrome contra %s — inicia sesión y cierra el navegador cuando termines", config.BaseURL))
+	ui.PrintHint("Se abre tu Chrome real, sin marcas de automatización, para que el login de Google/GitHub no lo bloquee. Al cerrar el navegador se guarda la sesión.")
+
+	runOpen := func() (string, error) {
+		var stderr bytes.Buffer
+		open := exec.Command("node", scriptPath, config.BaseURL, tmpPath)
+		open.Stdin = os.Stdin
+		open.Stdout = os.Stdout
+		open.Stderr = io.MultiWriter(os.Stderr, &stderr)
+		err := open.Run()
+		return stderr.String(), err
+	}
+
+	openStderr, openErr := runOpen()
+	if openErr != nil && playwrightBrowsersMissing(openStderr) {
+		ui.PrintStep("Faltan los navegadores de Playwright — descargando chromium (una sola vez)…")
+		if installErr := installPlaywrightBrowsers(); installErr != nil {
+			printPlaywrightInstallHint("oraculo auth")
+			return ui.ErrAlreadyReported
+		}
+		openStderr, openErr = runOpen()
+	}
+	if openErr != nil {
+		if playwrightBrowsersMissing(openStderr) {
+			printPlaywrightInstallHint("oraculo auth")
+			return ui.ErrAlreadyReported
+		}
+		if strings.Contains(openStderr, "MODULE_NOT_FOUND") {
+			printPlaywrightTestModuleHint()
+			return ui.ErrAlreadyReported
+		}
+		return ui.Fail("El navegador de captura no terminó bien: %s", openErr)
 	}
 
 	stateData, err := os.ReadFile(tmpPath)
 	if err != nil || len(stateData) == 0 {
-		ui.PrintError("No se capturó la sesión. ¿Cerraste el browser sin loguearte?")
-		return nil
+		return ui.Fail("No se capturó la sesión. ¿Cerraste el navegador sin iniciar sesión?")
 	}
 
-	var probe map[string]any
-	if err := json.Unmarshal(stateData, &probe); err != nil {
-		ui.PrintError("El storageState capturado no es JSON válido.")
-		return nil
+	var state capturedStorageState
+	if err := json.Unmarshal(stateData, &state); err != nil {
+		return ui.Fail("El storageState capturado no es JSON válido.")
+	}
+
+	localStorageCount := 0
+	for _, origin := range state.Origins {
+		localStorageCount += len(origin.LocalStorage)
+	}
+	if len(state.Cookies) == 0 && localStorageCount == 0 {
+		return ui.Fail(
+			"No se detectó ninguna sesión (0 cookies, 0 localStorage). " +
+				"¿Cerraste el navegador sin iniciar sesión? Corre `oraculo auth` de nuevo e inicia sesión antes de cerrarlo.",
+		)
 	}
 
 	apiClient := api.NewClient(strings.TrimRight(config.APIURL, "/"))
@@ -116,8 +259,7 @@ func runAuthCapture() error {
 		authExpiresInDaysFlag,
 	)
 	if err != nil {
-		ui.PrintError(fmt.Sprintf("No se pudo guardar la sesión: %s", err))
-		return nil
+		return ui.Fail("No se pudo guardar la sesión: %s", err)
 	}
 
 	expiry := "sin expiración"
@@ -125,8 +267,9 @@ func runAuthCapture() error {
 		expiry = "expira " + *meta.ExpiresAt
 	}
 	ui.PrintSuccess(fmt.Sprintf(
-		"Sesión '%s' guardada para '%s' (%s). Grabá con `oraculo record <nombre>` sin el login.",
-		meta.Label, config.Project, expiry,
+		"Sesión '%s' guardada para '%s' (%s) · %d cookies, %d entradas de localStorage. "+
+			"Graba con `oraculo record <nombre>` sin el login.",
+		meta.Label, config.Project, expiry, len(state.Cookies), localStorageCount,
 	))
 	return nil
 }
@@ -134,29 +277,25 @@ func runAuthCapture() error {
 func runAuthStatus() error {
 	config, err := loadOraculoConfig()
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 	if config.RefId == "" || config.APIURL == "" {
-		ui.PrintError("Faltan `refId` o `api_url` en oraculo.config.json. Corré 'oraculo init'.")
-		return nil
+		return ui.Fail("Faltan `refId` o `api_url` en oraculo.config.json. Corre 'oraculo init'.")
 	}
 
-	token, err := loadToken()
+	token, err := appconfig.LoadToken()
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 
 	apiClient := api.NewClient(strings.TrimRight(config.APIURL, "/"))
 	meta, err := apiClient.GetAuthSessionStatus(token, config.RefId)
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 	if meta == nil {
 		ui.PrintStep(fmt.Sprintf(
-			"El proyecto '%s' no tiene sesión guardada. Capturala con `oraculo auth`.",
+			"El proyecto '%s' no tiene sesión guardada. Captúrala con `oraculo auth`.",
 			config.Project,
 		))
 		return nil
@@ -168,7 +307,7 @@ func runAuthStatus() error {
 	}
 	if meta.Expired {
 		ui.PrintWarning(fmt.Sprintf(
-			"Sesión '%s' (capturada %s) EXPIRADA — refrescala con `oraculo auth`.",
+			"Sesión '%s' (capturada %s) EXPIRADA — refréscala con `oraculo auth`.",
 			meta.Label, meta.CapturedAt,
 		))
 		return nil
@@ -183,24 +322,20 @@ func runAuthStatus() error {
 func runAuthClear() error {
 	config, err := loadOraculoConfig()
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 	if config.RefId == "" || config.APIURL == "" {
-		ui.PrintError("Faltan `refId` o `api_url` en oraculo.config.json. Corré 'oraculo init'.")
-		return nil
+		return ui.Fail("Faltan `refId` o `api_url` en oraculo.config.json. Corre 'oraculo init'.")
 	}
 
-	token, err := loadToken()
+	token, err := appconfig.LoadToken()
 	if err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 
 	apiClient := api.NewClient(strings.TrimRight(config.APIURL, "/"))
 	if err := apiClient.DeleteAuthSession(token, config.RefId); err != nil {
-		ui.PrintError(err.Error())
-		return nil
+		return ui.Fail("%s", err)
 	}
 	ui.PrintSuccess(fmt.Sprintf("Sesión del proyecto '%s' borrada.", config.Project))
 	return nil

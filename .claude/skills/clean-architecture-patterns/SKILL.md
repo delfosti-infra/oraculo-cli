@@ -89,8 +89,8 @@ Go enforza que packages bajo `internal/` solo pueden ser importados por código 
 package cmd
 
 import (
-    "github.com/delfosti/oraculo-cli/internal/api"
-    "github.com/delfosti/oraculo-cli/internal/ui"
+    "github.com/delfosti-infra/oraculo-cli/internal/api"
+    "github.com/delfosti-infra/oraculo-cli/internal/ui"
     "github.com/spf13/cobra"
 )
 

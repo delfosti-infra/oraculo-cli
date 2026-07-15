@@ -1,12 +1,25 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
+
+// ErrAlreadyReported marca un fallo cuyo detalle ya se imprimió;
+// root solo debe salir con código 1 sin volver a imprimirlo.
+var ErrAlreadyReported = errors.New("fallo ya reportado")
+
+// Fail imprime el error con estilo y devuelve ErrAlreadyReported
+// para que el comando propague exit code 1.
+func Fail(format string, args ...any) error {
+	PrintError(fmt.Sprintf(format, args...))
+	return ErrAlreadyReported
+}
 
 var (
 	headerStyle = lipgloss.NewStyle().
@@ -59,16 +72,41 @@ func PrintSuccess(message string) {
 }
 
 func PrintError(message string) {
-	fmt.Printf("\n  %s %s\n\n", errorMarkStyle.Render("✗"), message)
+	fmt.Fprintf(os.Stderr, "\n  %s %s\n\n", errorMarkStyle.Render("✗"), message)
 }
 
 func PrintStep(message string) {
 	fmt.Printf("  %s %s\n", successStyle.Render("✓"), labelStyle.Render(message))
 }
 
+func PrintHint(message string) {
+	fmt.Printf("  %s %s\n", arrowStyle.Render("→"), hintStyle.Render(message))
+}
+
+// PrintCheckFail imprime una línea compacta de checklist fallida (✗), sin los
+// saltos extra de PrintError. Pensada para 'oraculo doctor' / 'oraculo check'.
+func PrintCheckFail(message string) {
+	fmt.Fprintf(os.Stderr, "  %s %s\n", errorMarkStyle.Render("✗"), labelStyle.Render(message))
+}
+
 func PrintWarning(message string) {
 	warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#C2902B")).Bold(true)
-	fmt.Printf("  %s %s\n", warningStyle.Render("!"), labelStyle.Render(message))
+	fmt.Fprintf(os.Stderr, "  %s %s\n", warningStyle.Render("!"), labelStyle.Render(message))
+}
+
+// PrintNotice imprime un aviso destacado en caja (borde redondeado) para
+// información que el usuario NO debe pasar por alto, sin frenar el flujo.
+func PrintNotice(title string, lines ...string) {
+	body := headerStyle.Render(title)
+	for _, line := range lines {
+		body += "\n" + hintStyle.Render(line)
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorGold).
+		Padding(0, 2).
+		MarginLeft(2)
+	fmt.Println(boxStyle.Render(body))
 }
 
 func padRight(s string, width int) string {

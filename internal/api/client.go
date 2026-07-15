@@ -3,13 +3,24 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
-	"github.com/delfosti/oraculo-cli/internal/api/types"
+	"github.com/delfosti-infra/oraculo-cli/internal/api/types"
 )
+
+// IsConnectionError reporta si err es una falla de transporte (no se pudo
+// conectar, DNS, timeout) en lugar de una respuesta de error del backend. Los
+// errores del cliente HTTP se envuelven en *url.Error antes de recibir respuesta;
+// un status no-2xx, en cambio, produce un error propio sin *url.Error.
+func IsConnectionError(err error) bool {
+	var urlErr *url.Error
+	return errors.As(err, &urlErr)
+}
 
 type Client struct {
 	baseURL    string
@@ -23,6 +34,18 @@ func NewClient(baseURL string) *Client {
 			Timeout: 30 * time.Second,
 		},
 	}
+}
+
+// Ping verifica conectividad con el backend: devuelve nil si el API responde por
+// HTTP (cualquier status, incluso 404), y un error de conexión si no se pudo
+// establecer transporte. Sirve para distinguir "backend caído" de "ruta inválida".
+func (c *Client) Ping() error {
+	resp, err := c.httpClient.Get(c.baseURL)
+	if err != nil {
+		return fmt.Errorf("no se pudo conectar con el API: %w", err)
+	}
+	defer resp.Body.Close()
+	return nil
 }
 
 func (c *Client) Login(email, password string) (*types.AuthSession, error) {
@@ -96,6 +119,81 @@ func (c *Client) ToggleFlowCore(token, projectRefId, flowRefId string, isCore bo
 
 	url := fmt.Sprintf("%s/projects/%s/flows/%s/core", c.baseURL, projectRefId, flowRefId)
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewBuffer(body))
+	if err != nil {
+		return fmt.Errorf("no se pudo construir el request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("no se pudo conectar con el API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("no se pudo leer la respuesta: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("%s", ErrorMessage(respBody, resp.StatusCode))
+	}
+
+	return nil
+}
+
+func (c *Client) ListFlows(token, projectRefId string) ([]types.FlowSummary, error) {
+	url := fmt.Sprintf("%s/projects/%s/flows?pageNumber=0&pageSize=500", c.baseURL, projectRefId)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo construir el request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo conectar con el API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo leer la respuesta: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("%s", ErrorMessage(respBody, resp.StatusCode))
+	}
+
+	page, err := types.UnwrapJSON[types.PageableResponse[types.FlowSummary]](respBody)
+	if err != nil {
+		return nil, fmt.Errorf("list flows: %w", err)
+	}
+	return page.Content, nil
+}
+
+func (c *Client) FindFlowBySlug(token, projectRefId, slug string) (*types.FlowSummary, error) {
+	flows, err := c.ListFlows(token, projectRefId)
+	if err != nil {
+		return nil, err
+	}
+	for i := range flows {
+		if flows[i].Slug == slug {
+			return &flows[i], nil
+		}
+	}
+	return nil, nil
+}
+
+func (c *Client) UpdateFlowSpec(token, projectRefId, flowRefId, specContent string) error {
+	body, err := json.Marshal(types.UpdateFlowSpecRequest{SpecContent: specContent})
+	if err != nil {
+		return fmt.Errorf("no se pudo serializar la solicitud: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/projects/%s/flows/%s/spec", c.baseURL, projectRefId, flowRefId)
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(body))
 	if err != nil {
 		return fmt.Errorf("no se pudo construir el request: %w", err)
 	}

@@ -1,7 +1,0 @@
-{
-  "project": "Felix",
-  "refId": "9fcdd66c-86d6-4766-aaf3-16828fac4500",
-  "base_url": "https://migratefelix.com",
-  "api_url": "http://localhost:3000",
-  "e2e_dir": "e2e"
-}
