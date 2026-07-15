@@ -120,6 +120,13 @@ test('t', async ({ page }) => {
 	}
 }
 
+func TestBuildPlaywrightConfig_UsesSpanishLocale(t *testing.T) {
+	cfg := buildPlaywrightConfig("/tmp/x.spec.ts", "", 0, nil, nil)
+	if !strings.Contains(cfg, `locale: "es-PE",`) {
+		t.Errorf("el replay debe fijar el locale del navegador en es-PE:\n%s", cfg)
+	}
+}
+
 func TestBuildPlaywrightConfig_TimeoutScalesWithSteps(t *testing.T) {
 	short := buildPlaywrightConfig("/tmp/x.spec.ts", "", 0, nil, nil)
 	if !strings.Contains(short, "timeout: 60000,") {
