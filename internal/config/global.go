@@ -13,7 +13,7 @@ import (
 // DefaultAPIURL es el backend hosteado de Oráculo al que apunta la CLI cuando no
 // hay flag, env var, config de proyecto ni sesión previa. Quienes desarrollan el
 // core pueden apuntar a otro con --api-url o la variable ORACULO_API_URL.
-const DefaultAPIURL = "https://dft-dev-useu2-oraculo-ca-001.jollymeadow-d0b48f68.eastus2.azurecontainerapps.io"
+const DefaultAPIURL = "https://dft-prd-useu2-oraculo-ca-001.grayplant-d49b4abc.eastus2.azurecontainerapps.io"
 
 // APIURLEnvVar sobreescribe el backend sin tocar archivos (útil en CI o para devs).
 const APIURLEnvVar = "ORACULO_API_URL"
