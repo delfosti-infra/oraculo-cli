@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Demo" tests="3" failures="1" errors="0" skipped="1" time="54.345">
+  <testcase name="login" classname="Demo" time="12.345"></testcase>
+  <testcase name="checkout" classname="Demo" time="42.000">
+    <failure message="TimeoutError: locator(&#39;#pay&#39;) not found" type="FAILED">Flow: Checkout&#xA;Estado: FAILED&#xA;Paso fallido: 3&#xA;URL: https://demo.test/checkout&#xA;&#xA;TimeoutError: locator(&#39;#pay&#39;) not found&#xA;    at step 3</failure>
+  </testcase>
+  <testcase name="signup" classname="Demo" time="0.000">
+    <skipped message="fail-fast"></skipped>
+  </testcase>
+</testsuite>
