@@ -43,11 +43,39 @@ func resolveVersion() string {
 	return "dev"
 }
 
+type exitCodeError struct {
+	code int
+	err  error
+}
+
+func (e *exitCodeError) Error() string {
+	return e.err.Error()
+}
+
+func (e *exitCodeError) Unwrap() error {
+	return e.err
+}
+
+func withExitCode(code int, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &exitCodeError{code: code, err: err}
+}
+
+func exitCodeFor(err error) int {
+	var coded *exitCodeError
+	if errors.As(err, &coded) {
+		return coded.code
+	}
+	return 1
+}
+
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		if !errors.Is(err, ui.ErrAlreadyReported) {
 			ui.PrintError(err.Error())
 		}
-		os.Exit(1)
+		os.Exit(exitCodeFor(err))
 	}
 }
