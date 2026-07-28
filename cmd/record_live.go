@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/delfosti-infra/oraculo-cli/internal/api/types"
 	"github.com/delfosti-infra/oraculo-cli/internal/ui"
 )
 
@@ -83,6 +84,7 @@ func runLiveRecord(e2eDir string, opts liveRecordOpts) (int, error) {
 // el meta y avisa. No hay replay ni detección de permisos por replay (las screenshots ya
 // están alineadas 1:1 con las acciones; los permisos se toman de la config del proyecto).
 func finishLiveRecord(
+	config *types.Config,
 	e2eDir, slug, specPath string,
 	screenshots int,
 	huKeys []string,
@@ -102,11 +104,14 @@ func finishLiveRecord(
 		screenshots, filepath.Join(e2eDir, ".oraculo", slug),
 	))
 
-	if len(huKeys) > 0 || usesAuthSession {
-		meta := flowMeta{JiraIssueKeys: huKeys, UsesAuthSession: usesAuthSession}
-		if err := saveFlowMeta(e2eDir, slug, meta); err != nil {
-			ui.PrintWarning(fmt.Sprintf("No se pudo guardar el meta del flow: %s", err))
-		}
+	meta := flowMeta{
+		ProjectRefId:    config.RefId,
+		ProjectName:     config.Project,
+		JiraIssueKeys:   huKeys,
+		UsesAuthSession: usesAuthSession,
+	}
+	if err := saveFlowMeta(e2eDir, slug, meta); err != nil {
+		ui.PrintWarning(fmt.Sprintf("No se pudo guardar el meta del flow: %s", err))
 	}
 
 	ui.PrintSuccess(fmt.Sprintf("Flow `%s` listo. Súbelo al backoffice con: oraculo push", slug))

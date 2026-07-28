@@ -75,7 +75,7 @@ var recordCmd = &cobra.Command{
 		}
 
 		if mp := normalizePlatform(recordPlatformFlag); mp == "IOS" || mp == "ANDROID" {
-			return recordMobile(e2eDir, slug, mp)
+			return recordMobile(config, e2eDir, slug, mp)
 		}
 
 		specPath := filepath.Join(e2eDir, slug+".spec.ts")
@@ -122,7 +122,7 @@ var recordCmd = &cobra.Command{
 				geo:            ipGeo,
 			})
 			if lerr == nil {
-				return finishLiveRecord(e2eDir, slug, specPath, n, huKeys, usesAuthSession)
+				return finishLiveRecord(config, e2eDir, slug, specPath, n, huKeys, usesAuthSession)
 			}
 			if errors.Is(lerr, errLiveRecorderEmpty) {
 				return ui.Fail(
@@ -300,17 +300,17 @@ var recordCmd = &cobra.Command{
 			))
 		}
 
-		if len(huKeys) > 0 || usesAuthSession || platform != "" || len(detectedPermissions) > 0 || geo != nil {
-			meta := flowMeta{
-				JiraIssueKeys:      huKeys,
-				UsesAuthSession:    usesAuthSession,
-				Platform:           platform,
-				GrantedPermissions: detectedPermissions,
-				Geolocation:        geo,
-			}
-			if err := saveFlowMeta(e2eDir, slug, meta); err != nil {
-				ui.PrintWarning(fmt.Sprintf("No se pudo guardar el meta del flow: %s", err))
-			}
+		meta := flowMeta{
+			ProjectRefId:       config.RefId,
+			ProjectName:        config.Project,
+			JiraIssueKeys:      huKeys,
+			UsesAuthSession:    usesAuthSession,
+			Platform:           platform,
+			GrantedPermissions: detectedPermissions,
+			Geolocation:        geo,
+		}
+		if err := saveFlowMeta(e2eDir, slug, meta); err != nil {
+			ui.PrintWarning(fmt.Sprintf("No se pudo guardar el meta del flow: %s", err))
 		}
 
 		ui.PrintSuccess(fmt.Sprintf("Flow `%s` listo. Súbelo al backoffice con: oraculo push", slug))
@@ -332,7 +332,7 @@ func recorderCommand() []string {
 	return []string{"npx", "--yes", "oraculo-mobile-recorder@latest"}
 }
 
-func recordMobile(e2eDir, slug, platform string) error {
+func recordMobile(config *types.Config, e2eDir, slug, platform string) error {
 	app := strings.TrimSpace(recordAppFlag)
 	if app == "" {
 		return ui.Fail("Para grabar un flow móvil necesitas --app (appPackage/bundleId o ruta al .apk/.ipa).")
@@ -377,7 +377,12 @@ func recordMobile(e2eDir, slug, platform string) error {
 		return ui.Fail("El grabador no generó el spec móvil (¿cerraste sin guardar?).")
 	}
 
-	meta := flowMeta{JiraIssueKeys: resolveHUsForRecord(recordHUFlag), Platform: platform}
+	meta := flowMeta{
+		ProjectRefId:  config.RefId,
+		ProjectName:   config.Project,
+		JiraIssueKeys: resolveHUsForRecord(recordHUFlag),
+		Platform:      platform,
+	}
 	if err := saveFlowMeta(e2eDir, slug, meta); err != nil {
 		ui.PrintWarning(fmt.Sprintf("No se pudo guardar el meta del flow: %s", err))
 	}

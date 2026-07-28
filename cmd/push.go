@@ -23,6 +23,8 @@ import (
 
 var pushCoreFlag bool
 var pushYesFlag bool
+var pushForceFlag bool
+var pushAllFlag bool
 
 var errFlowUnchanged = errors.New("el flow ya existe sin cambios")
 var errReplaceDeclined = errors.New("cancelado por el usuario")
@@ -32,6 +34,7 @@ type pushResult struct {
 	ok        bool
 	replaced  bool
 	unchanged bool
+	synced    bool
 	detail    string
 }
 
@@ -67,17 +70,34 @@ var pushCmd = &cobra.Command{
 			e2eDir = "e2e"
 		}
 
-		var targetSlugs []string
-		if len(args) > 0 {
-			targetSlugs = []string{slugify(args[0])}
+		var discovered []string
+		explicit := len(args) > 0
+		if explicit {
+			discovered = []string{slugify(args[0])}
 		} else {
-			targetSlugs, err = discoverFlows(e2eDir)
+			discovered, err = discoverFlows(e2eDir)
 			if err != nil {
 				return ui.Fail("%s", err)
 			}
-			if len(targetSlugs) == 0 {
+			if len(discovered) == 0 {
 				return ui.Fail("No se encontraron specs en %s/. Corre 'oraculo record <nombre>' primero.", e2eDir)
 			}
+		}
+
+		selection := selectFlowsToPush(e2eDir, config, discovered, explicit)
+		if explicit && len(selection.Foreign) > 0 {
+			foreign := selection.Foreign[0]
+			return ui.Fail(
+				"'%s' fue grabado para «%s», no para «%s». Corre 'oraculo switch' para cambiar de proyecto, o 'oraculo push %s --force' para subirlo igual.",
+				foreign.Slug, foreign.ProjectName, config.Project, foreign.Slug,
+			)
+		}
+		reportSkippedFlows(selection, config.Project)
+
+		targetSlugs := selection.Push
+		if len(targetSlugs) == 0 {
+			ui.PrintSuccess(pushSummary(0, 0, len(selection.Unchanged)))
+			return nil
 		}
 
 		ui.PrintStep(fmt.Sprintf("Publicando %d flow(s) al proyecto '%s'", len(targetSlugs), config.Project))
@@ -91,7 +111,8 @@ var pushCmd = &cobra.Command{
 			results = append(results, result)
 		}
 
-		ok, replaced, unchanged, fail := 0, 0, 0, 0
+		ok, replaced, fail := 0, 0, 0
+		unchanged := len(selection.Unchanged)
 		for _, r := range results {
 			switch {
 			case r.replaced:
@@ -113,6 +134,100 @@ var pushCmd = &cobra.Command{
 	},
 }
 
+func selectFlowsToPush(
+	e2eDir string,
+	config *types.Config,
+	slugs []string,
+	explicit bool,
+) flowSelection {
+	var selection flowSelection
+	for _, slug := range slugs {
+		meta := loadFlowMeta(e2eDir, slug)
+
+		switch classifyFlowOwnership(meta, config.RefId) {
+		case ownershipForeign:
+			if !pushForceFlag {
+				selection.Foreign = append(selection.Foreign, foreignFlow{
+					Slug:        slug,
+					ProjectName: describeProjectOwner(meta),
+				})
+				continue
+			}
+		case ownershipOrphan:
+			selection.Adopted = append(selection.Adopted, slug)
+		}
+
+		if !explicit && !pushAllFlag && isFlowUnchangedSinceLastPush(e2eDir, slug, meta) {
+			selection.Unchanged = append(selection.Unchanged, unchangedFlow{
+				Slug:     slug,
+				PushedAt: parsePushedAt(meta.PushedAt),
+			})
+			continue
+		}
+
+		selection.Push = append(selection.Push, slug)
+	}
+	return selection
+}
+
+func isFlowUnchangedSinceLastPush(e2eDir, slug string, meta flowMeta) bool {
+	spec, err := readLocalSpec(e2eDir, slug)
+	if err != nil {
+		return false
+	}
+	return isAlreadyPushed(meta, spec)
+}
+
+func parsePushedAt(raw string) time.Time {
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
+}
+
+func reportSkippedFlows(selection flowSelection, projectName string) {
+	if len(selection.Foreign) > 0 {
+		ui.PrintWarning(fmt.Sprintf(
+			"%d flow(s) omitido(s) — fueron grabados para otro proyecto:",
+			len(selection.Foreign),
+		))
+		for _, line := range groupForeignByProject(selection.Foreign) {
+			ui.PrintStep(line)
+		}
+		ui.PrintHint("Cambia de proyecto con 'oraculo switch', o fuerza uno puntual con 'oraculo push <slug> --force'.")
+	}
+
+	if len(selection.Unchanged) > 0 {
+		ui.PrintStep(fmt.Sprintf(
+			"%d flow(s) sin cambios desde la última subida — omitidos. Usa '--all' para revisarlos igual contra el backoffice.",
+			len(selection.Unchanged),
+		))
+	}
+
+	if len(selection.Adopted) > 0 {
+		ui.PrintStep(fmt.Sprintf(
+			"%d flow(s) sin proyecto asignado — quedan vinculados a '%s' al subirlos.",
+			len(selection.Adopted), projectName,
+		))
+	}
+}
+
+func stampPushedMeta(e2eDir, slug string, config *types.Config) {
+	spec, err := readLocalSpec(e2eDir, slug)
+	if err != nil {
+		return
+	}
+	meta := loadFlowMeta(e2eDir, slug)
+	meta.ProjectRefId = config.RefId
+	meta.ProjectName = config.Project
+	meta.PushedAt = time.Now().UTC().Format(time.RFC3339)
+	meta.SpecHash = specFingerprint(spec)
+	if err := saveFlowMeta(e2eDir, slug, meta); err != nil {
+		ui.PrintWarning(fmt.Sprintf("'%s' subido, pero no se pudo guardar el meta local: %s", slug, err))
+	}
+}
+
 func pushOne(
 	client *http.Client,
 	apiClient *api.Client,
@@ -125,11 +240,17 @@ func pushOne(
 		return pushResult{slug: slug, ok: false, detail: err.Error()}
 	}
 
+	var result pushResult
 	if existing != nil {
-		return replaceExistingFlow(apiClient, config, token, e2eDir, slug, existing)
+		result = replaceExistingFlow(apiClient, config, token, e2eDir, slug, existing)
+	} else {
+		result = createNewFlow(client, apiClient, config, token, e2eDir, slug)
 	}
 
-	return createNewFlow(client, apiClient, config, token, e2eDir, slug)
+	if result.synced {
+		stampPushedMeta(e2eDir, slug, config)
+	}
+	return result
 }
 
 func createNewFlow(
@@ -161,7 +282,7 @@ func createNewFlow(
 	}
 
 	ui.PrintStep(fmt.Sprintf("'%s' · %s", slug, detail))
-	return pushResult{slug: slug, ok: true, detail: detail}
+	return pushResult{slug: slug, ok: true, synced: true, detail: detail}
 }
 
 func replaceExistingFlow(
@@ -178,7 +299,7 @@ func replaceExistingFlow(
 
 	if ui.SpecsEqual(existing.SpecContent, localSpec) {
 		ui.PrintStep(fmt.Sprintf("'%s' · sin cambios, ya estaba al día en el backoffice", slug))
-		return pushResult{slug: slug, unchanged: true, detail: "sin cambios"}
+		return pushResult{slug: slug, unchanged: true, synced: true, detail: "sin cambios"}
 	}
 
 	if err := confirmReplace(slug, existing, localSpec); err != nil {
@@ -213,7 +334,7 @@ func replaceExistingFlow(
 
 	ui.PrintStep(fmt.Sprintf("'%s' · %s", slug, detail))
 	ui.PrintHint("Las screenshots del flow quedaron marcadas como desactualizadas. Hoy el update solo actualiza el spec; re-subir las nuevas capturas necesita soporte en el core (pendiente).")
-	return pushResult{slug: slug, replaced: true, detail: detail}
+	return pushResult{slug: slug, replaced: true, synced: true, detail: detail}
 }
 
 func confirmReplace(slug string, existing *types.FlowSummary, localSpec string) error {
@@ -455,5 +576,7 @@ func slugToName(slug string) string {
 func init() {
 	pushCmd.Flags().BoolVar(&pushCoreFlag, "core", false, "Marca el flow como parte del Core Suite del proyecto")
 	pushCmd.Flags().BoolVarP(&pushYesFlag, "yes", "y", false, "No pide confirmación al crear una versión nueva de un flow existente")
+	pushCmd.Flags().BoolVar(&pushForceFlag, "force", false, "Sube el flow aunque haya sido grabado para otro proyecto")
+	pushCmd.Flags().BoolVar(&pushAllFlag, "all", false, "Revisa todos los flows contra el backoffice, incluso los que no cambiaron desde la última subida")
 	rootCmd.AddCommand(pushCmd)
 }

@@ -14,6 +14,10 @@ import (
 )
 
 type flowMeta struct {
+	ProjectRefId       string       `json:"projectRefId,omitempty"`
+	ProjectName        string       `json:"projectName,omitempty"`
+	PushedAt           string       `json:"pushedAt,omitempty"`
+	SpecHash           string       `json:"specHash,omitempty"`
 	JiraIssueKeys      []string     `json:"jiraIssueKeys,omitempty"`
 	UsesAuthSession    bool         `json:"usesAuthSession,omitempty"`
 	Platform           string       `json:"platform,omitempty"`
